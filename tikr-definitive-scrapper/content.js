@@ -6,12 +6,8 @@
   const warn = (...a) => console.warn(`[${NS}][CONTENT]`, ts(), ...a);
   const err  = (...a) => console.error(`[${NS}][CONTENT]`, ts(), ...a);
 
-  window.addEventListener("unhandledrejection", (e) => {
-    err("UNHANDLED REJECTION", e.reason);
-  });
-  window.addEventListener("error", (e) => {
-    err("ERROR EVENT", e.message, e.filename, e.lineno, e.colno);
-  });
+  window.addEventListener("unhandledrejection", (e) => err("UNHANDLED REJECTION", e.reason));
+  window.addEventListener("error", (e) => err("ERROR EVENT", e.message, e.filename, e.lineno, e.colno));
 
   log("content.js injected", { href: location.href, readyState: document.readyState });
 
@@ -31,7 +27,7 @@
     const hdr  = pad(rows[0]);
     const sep  = hdr.map(() => "---");
     const body = rows.slice(1).map(pad);
-    return [hdr, sep, ...body].map((r) => `| ${r.join(" | ")} |`).join("\n"); // <-- FIX
+    return [hdr, sep, ...body].map((r) => `| ${r.join(" | ")} |`).join("\n"); // FIX
   }
 
   function toast(text) {
@@ -85,16 +81,19 @@
     if (!picking) return;
     const t = e.target ? e.target.closest("table") : null;
     if (!t) return;
+
     e.preventDefault();
     e.stopPropagation();
+
     const md = tableToMd(t);
     log("picked table", { rows: t.querySelectorAll("tr").length, mdLen: md.length });
+
     cleanPick();
     relay({ type: "MD_RESULT", markdown: md });
 
     navigator.clipboard.writeText(md).then(
       () => toast("✅ Table copied as Markdown"),
-      () => toast("⚠ Open side-panel to copy")
+      () => toast("⚠ Could not copy (open side-panel?)")
     );
   }
 
@@ -102,12 +101,11 @@
     if (e.key === "Escape" && picking) {
       log("pick cancelled via ESC");
       cleanPick();
-      relay({ type: "MD_RESULT", markdown: "" });
       toast("Cancelled");
     }
   }
 
-  /* ════════════ bridge: MAIN world → ISOLATED world ════════════ */
+  /* ════════════ bridge: MAIN -> ISOLATED ════════════ */
   document.addEventListener("__tikr_to_bg", (e) => {
     const raw = e?.detail;
     log("bridge MAIN->CONTENT event __tikr_to_bg", { rawPreview: String(raw).slice(0, 200) });
@@ -115,7 +113,7 @@
       const msg = JSON.parse(raw);
       relay(msg);
     } catch (ex) {
-      err("failed parsing __tikr_to_bg.detail", ex);
+      err("failed parsing __tikr_to_bg.detail", String(ex));
     }
   });
 
@@ -145,11 +143,11 @@
           jobs: msg.jobs,
           period: msg.period,
           runId: msg.runId,
-          href: location.href,
+          href: location.href
         });
 
         document.dispatchEvent(new CustomEvent("__tikr_to_main", {
-          detail: JSON.stringify(msg),
+          detail: JSON.stringify(msg)
         }));
 
         sendResponse?.({ ok: true });
@@ -158,8 +156,9 @@
 
       sendResponse?.({ ok: true, ignored: true });
       return false;
+
     } catch (ex) {
-      err("onMessage handler exception", ex);
+      err("onMessage handler exception", String(ex));
       try { sendResponse?.({ ok: false, error: String(ex) }); } catch (_) {}
       return false;
     }
@@ -167,7 +166,7 @@
 
   chrome.runtime.onMessage.addListener(window.__tikrOnMessage);
 
-  /* ════════════ tell background we are ready ════════════ */
+  /* ════════════ signal ready ════════════ */
   chrome.runtime.sendMessage({ type: "CONTENT_READY" }).then(() => {
     log("sent CONTENT_READY");
   }).catch((e) => {

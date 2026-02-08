@@ -1,105 +1,101 @@
-/* popup.js */
+const NS = "TIKR-AI";
+const ts = () => new Date().toISOString();
+const log = (...a) => console.log(`[${NS}][PANEL]`, ts(), ...a);
 
-const DBG = true;
-const TAG = "[TIKR-AI][PANEL]";
-const ts  = () => new Date().toISOString();
-const log = (...a) => DBG && console.log(TAG, ts(), ...a);
+const scrapeBtn = document.getElementById("scrape");
+const pickBtn = document.getElementById("pick");
+const copyBtn = document.getElementById("copy");
+const out = document.getElementById("out");
+const statusEl = document.getElementById("status");
+const periodSel = document.getElementById("period");
 
-const $  = (s) => document.querySelector(s);
-const $$ = (s) => [...document.querySelectorAll(s)];
+function setStatus(s) {
+  statusEl.textContent = s;
+}
 
-const goBtn   = $("#goBtn");
-const pickBtn = $("#pickBtn");
-const copyBtn = $("#copyBtn");
-const dlBtn   = $("#dlBtn");
-const out     = $("#out");
-const prog    = $("#prog");
-const period  = $("#period");
-
-log("popup loaded");
-
-pickBtn.addEventListener("click", async () => {
-  log("pick clicked");
-  out.value = "";
-  copyBtn.disabled = true;
-  dlBtn.disabled = true;
+async function getActiveTabId() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  log("active tab", tab?.id, tab?.url);
-  chrome.runtime.sendMessage({ type: "START_PICK", tabId: tab.id });
+  if (!tab?.id) throw new Error("No active tab");
+  return tab.id;
+}
+
+function selectedJobs() {
+  const checks = [...document.querySelectorAll(".jobCheck")];
+  return checks.filter(c => c.checked).map(c => c.value);
+}
+
+function updateScrapeButtonLabel() {
+  const jobs = selectedJobs();
+  scrapeBtn.textContent = `Scrape (${jobs.length})`;
+}
+
+document.querySelectorAll(".jobCheck").forEach((el) => {
+  el.addEventListener("change", updateScrapeButtonLabel);
+});
+updateScrapeButtonLabel();
+
+copyBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(out.value || "");
+    setStatus("✅ Copied to clipboard");
+  } catch (e) {
+    setStatus("⚠ Copy failed (browser permissions?)");
+  }
 });
 
-goBtn.addEventListener("click", async () => {
-  const jobs = $$(".chks input:checked").map((cb) => cb.value);
-  log("go clicked", { jobs, period: period.value });
-
-  if (!jobs.length) { prog.textContent = "⚠ Select at least one section"; return; }
-
+pickBtn.addEventListener("click", async () => {
   out.value = "";
   copyBtn.disabled = true;
-  dlBtn.disabled = true;
-  goBtn.disabled = true;
-  goBtn.textContent = "⏳ Scraping…";
-  prog.textContent = "Starting…";
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  log("active tab", tab?.id, tab?.url);
+  const tabId = await getActiveTabId();
+  const runId = `run_${Date.now()}`;
+
+  log("START_PICK", { tabId, runId });
+  setStatus("Pick mode: click a table in TIKR…");
+
+  chrome.runtime.sendMessage({ type: "START_PICK", tabId, runId });
+});
+
+scrapeBtn.addEventListener("click", async () => {
+  out.value = "";
+  copyBtn.disabled = true;
+
+  const jobs = selectedJobs();
+  const period = periodSel.value || "annual";
+  const tabId = await getActiveTabId();
+  const runId = `run_${Date.now()}`;
+
+  log("SCRAPE_START", { tabId, runId, jobs, period });
+  setStatus(`Starting scrape (${jobs.length})…`);
 
   chrome.runtime.sendMessage({
     type: "SCRAPE_START",
-    tabId: tab.id,
+    tabId,
     jobs,
-    period: period.value,
+    period,
+    runId
   });
 });
 
 chrome.runtime.onMessage.addListener((msg) => {
-  log("runtime.onMessage", msg);
+  if (!msg?.type) return;
 
   if (msg.type === "SCRAPE_PROGRESS") {
-    prog.textContent = `(${msg.done}/${msg.total}) ${msg.current}…`;
+    setStatus(`(${msg.done}/${msg.total}) ${msg.current}`);
+    return;
   }
 
   if (msg.type === "SCRAPE_DONE") {
-    out.value = msg.text || "(empty)";
-    copyBtn.disabled = false;
-    dlBtn.disabled = false;
-    goBtn.disabled = false;
-    goBtn.textContent = "🚀 Scrape selected";
-    prog.textContent = `✅ Done – ${(msg.text || "").length.toLocaleString()} chars`;
+    out.value = msg.text || "";
+    copyBtn.disabled = !out.value;
+    setStatus("✅ Done (result in textarea)");
+    return;
   }
 
   if (msg.type === "MD_RESULT") {
     out.value = msg.markdown || "";
-    copyBtn.disabled = !msg.markdown;
-    dlBtn.disabled = !msg.markdown;
+    copyBtn.disabled = !out.value;
+    setStatus(out.value ? "✅ Picked table (Markdown ready)" : "Pick cancelled/empty");
+    return;
   }
-
-  return false;
-});
-
-copyBtn.addEventListener("click", async () => {
-  log("copy clicked", { len: out.value.length });
-  await navigator.clipboard.writeText(out.value);
-  copyBtn.textContent = "✅ Copied!";
-  setTimeout(() => (copyBtn.textContent = "📋 Copy all"), 1200);
-});
-
-dlBtn.addEventListener("click", () => {
-  log("download clicked", { len: out.value.length });
-  const blob = new Blob([out.value], { type: "text/markdown" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
-  a.download = `tikr-data-${Date.now()}.md`;
-  a.click();
-  URL.revokeObjectURL(url);
-});
-
-chrome.storage.sync.get({ period: "annual" }, (d) => {
-  period.value = d.period;
-  log("loaded period from storage", d.period);
-});
-period.addEventListener("change", () => {
-  log("period changed", period.value);
-  chrome.storage.sync.set({ period: period.value });
 });

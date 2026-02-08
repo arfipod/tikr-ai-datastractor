@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TIKR-AI</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="title">TIKR-AI</div>
+    <div class="sub">Scrape tables → Markdown</div>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <label class="label">Period</label>
+      <select id="period">
+        <option value="annual" selected>Annual</option>
+        <option value="quarterly">Quarterly</option>
+      </select>
+    </div>
+
+    <div class="jobs">
+      <label class="job"><input type="checkbox" class="jobCheck" value="incomeStatement" checked> Income Statement</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="balanceSheet" checked> Balance Sheet</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="cashFlow" checked> Cash Flow</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="ratios" checked> Ratios</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="multiples" checked> Valuation Multiples</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="analystTargets" checked> Analyst Price Targets</label>
+      <label class="job"><input type="checkbox" class="jobCheck" value="estimates" checked> Consensus Estimates</label>
+    </div>
+
+    <div class="buttons">
+      <button id="scrape" class="primary">Scrape (7)</button>
+      <button id="pick">Pick one table</button>
+      <button id="copy" disabled>Copy</button>
+    </div>
+
+    <div id="status" class="status">Ready.</div>
+  </section>
+
+  <section class="card grow">
+    <textarea id="out" placeholder="Aquí aparecerá el Markdown…"></textarea>
+    <div class="hint">Tip: después de “Scrape”, el texto también intenta copiarse automáticamente.</div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
