@@ -1,30 +1,34 @@
 /* ── content.js ── pick-mode + message router ──────────────── */
-(() => {
-  if (window.__tikrContentLoaded) return;
-  window.__tikrContentLoaded = true;
+(function () {
 
   /* ════════════ helpers ════════════ */
 
-  const esc = (s) => (s ?? "").replace(/\\|/g, "\\\\|").trim();
-  const norm = (s) => esc((s ?? "").replace(/\\s+/g, " ").trim());
+  /* [|] uses a character class so backslash-doubling during copy-paste can never break it */
+  var esc  = function (s) { return (s == null ? "" : s).replace(/[|]/g, "\\\\|").trim(); };
+  var norm = function (s) { return esc((s == null ? "" : s).replace(/\\s+/g, " ").trim()); };
 
   function tableToMd(table) {
-    const rows = [];
-    for (const tr of table.querySelectorAll("tr")) {
-      const cells = [...tr.querySelectorAll("th,td")].map((c) => norm(c.innerText));
+    var rows = [];
+    var trs = table.querySelectorAll("tr");
+    for (var i = 0; i < trs.length; i++) {
+      var cells = Array.from(trs[i].querySelectorAll("th,td")).map(function (c) {
+        return norm(c.innerText);
+      });
       if (cells.length) rows.push(cells);
     }
     if (!rows.length) return "";
-    const w = Math.max(...rows.map((r) => r.length));
-    const pad = (r) => r.concat(Array(w - r.length).fill(""));
-    const hdr = pad(rows[0]);
-    const sep = hdr.map(() => "---");
-    const body = rows.slice(1).map(pad);
-    return [hdr, sep, ...body].map((r) => `| ${r.join(" | ")} |`).join("\\n");
+    var w = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+    var pad = function (r) { return r.concat(Array(w - r.length).fill("")); };
+    var hdr  = pad(rows[0]);
+    var sep  = hdr.map(function () { return "---"; });
+    var body = rows.slice(1).map(pad);
+    return [hdr, sep].concat(body).map(function (r) {
+      return "| " + r.join(" | ") + " |";
+    }).join("\\n");
   }
 
   function toast(text) {
-    let t = document.getElementById("__tikr_toast");
+    var t = document.getElementById("__tikr_toast");
     if (t) t.remove();
     t = document.createElement("div");
     t.id = "__tikr_toast";
@@ -35,12 +39,12 @@
       "border-radius:10px;font:13px/1.4 system-ui,sans-serif;" +
       "box-shadow:0 6px 18px rgba(0,0,0,.25);";
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2200);
+    setTimeout(function () { t.remove(); }, 2200);
   }
 
   /* ════════════ pick mode ════════════ */
 
-  let picking = false, highlighted = null;
+  var picking = false, highlighted = null;
 
   function highlight(el) {
     if (highlighted) highlighted.style.outline = "";
@@ -59,22 +63,22 @@
 
   function onMove(e) {
     if (!picking) return;
-    const t = e.target?.closest("table");
+    var t = e.target ? e.target.closest("table") : null;
     if (t) highlight(t);
   }
 
   function onPick(e) {
     if (!picking) return;
-    const t = e.target?.closest("table");
+    var t = e.target ? e.target.closest("table") : null;
     if (!t) return;
     e.preventDefault();
     e.stopPropagation();
-    const md = tableToMd(t);
+    var md = tableToMd(t);
     cleanPick();
     relay({ type: "MD_RESULT", markdown: md });
     navigator.clipboard.writeText(md).then(
-      () => toast("✅ Table copied as Markdown"),
-      () => toast("⚠ Open side-panel to copy")
+      function () { toast("\\u2705 Table copied as Markdown"); },
+      function () { toast("\\u26A0 Open side-panel to copy"); }
     );
   }
 
@@ -87,12 +91,16 @@
   }
 
   function relay(msg) {
-    chrome.runtime.sendMessage(msg).catch(() => {});
+    chrome.runtime.sendMessage(msg).catch(function () {});
   }
 
   /* ════════════ message listener ════════════ */
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  if (window.__tikrOnMessage) {
+    chrome.runtime.onMessage.removeListener(window.__tikrOnMessage);
+  }
+
+  window.__tikrOnMessage = function (msg) {
     if (msg.type === "ENABLE_PICK_MODE") {
       cleanPick();
       picking = true;
@@ -105,5 +113,13 @@
     if (msg.type === "SCRAPE_CMD" && window.__tikrScraper) {
       window.__tikrScraper.run(msg.jobs, msg.period);
     }
-  });
+
+    return false;
+  };
+
+  chrome.runtime.onMessage.addListener(window.__tikrOnMessage);
+
+  /* ════════════ tell background we are ready ════════════ */
+  chrome.runtime.sendMessage({ type: "CONTENT_READY" }).catch(function () {});
+
 })();

@@ -77,9 +77,9 @@ copyBtn.addEventListener("click", async () => {
 
 dlBtn.addEventListener("click", () => {
   const blob = new Blob([out.value], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
   a.download = `tikr-data-${Date.now()}.md`;
   a.click();
   URL.revokeObjectURL(url);

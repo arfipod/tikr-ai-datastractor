@@ -4,24 +4,15 @@
 
   /* ═══════════════════ constants ═══════════════════ */
 
-  /**
-   * Master map of every scrape-able view.
-   *   key   → unique job id (used in popup checkboxes)
-   *   section / tab → build the URL
-   *   label → human-readable name shown in output
-   */
   const JOBS = {
-    // ── Financials ──
     incomeStatement : { section: "financials", tab: "is",   label: "Income Statement" },
     balanceSheet    : { section: "financials", tab: "bs",   label: "Balance Sheet" },
     cashFlow        : { section: "financials", tab: "cf",   label: "Cash Flow" },
     ratios          : { section: "financials", tab: "r",    label: "Ratios" },
     segments        : { section: "financials", tab: "seg",  label: "Segments" },
-    // ── Valuation ──
     multiples       : { section: "multiples",  tab: "multi",  label: "Valuation Multiples" },
     analystTargets  : { section: "multiples",  tab: "street", label: "Analyst Price Targets" },
     competitors     : { section: "multiples",  tab: "comp",   label: "Competitors" },
-    // ── Estimates ──
     estimates       : { section: "estimates",  tab: "est",  label: "Consensus Estimates" },
     guidance        : { section: "estimates",  tab: "mgmt", label: "Management Guidance" },
     earningsReview  : { section: "estimates",  tab: "er",   label: "Earnings Review" },
@@ -31,9 +22,11 @@
 
   /* ═══════════════════ helpers ═══════════════════ */
 
-  const sleep   = (ms) => new Promise((r) => setTimeout(r, ms));
-  const esc     = (s) => (s ?? "").replace(/\\|/g, "\\\\|");
-  const norm    = (s) => esc((s ?? "").replace(/\\s+/g, " ").trim());
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /* [|] character class is immune to backslash-doubling during copy-paste */
+  const esc   = (s) => (s ?? "").replace(/[|]/g, "\\\\|");
+  const norm  = (s) => esc((s ?? "").replace(/\\s+/g, " ").trim());
 
   function relay(msg) {
     chrome.runtime.sendMessage(msg).catch(() => {});
@@ -54,7 +47,6 @@
     setTimeout(() => t.remove(), 2500);
   }
 
-  /** Parse the current URL to get cid, tid, ref */
   function getIds() {
     const u = new URL(location.href);
     return {
@@ -64,42 +56,53 @@
     };
   }
 
-  /** Parse company name + ticker from <title> */
+  /**
+   * Parse company name, ticker, price from <title>.
+   *
+   * Title formats seen:
+   *   "US$278.12 Apple Inc. (AAPL) - Terminal TIKR"
+   *   "HK$35.18 Xiaomi Corporation (1810) - Terminal TIKR"
+   */
   function getMeta() {
-    // title format: "US$108.70 The Walt Disney Company (DIS) - Terminal TIKR"
     const t = document.title;
-    const ticker = t.match(/\\(([A-Z0-9.]+)\\)/)?.[1] || "";
-    const name = t.match(/(?:US\\$[\\d.,]+\\s+)?(.+?)\\s*\\(/)?.[1] || "";
-    const price = t.match(/US\\$([\\d.,]+)/)?.[1] || "";
+
+    const close = t.lastIndexOf(")");
+    const open  = close > 0 ? t.lastIndexOf("(", close) : -1;
+    const ticker = (open > 0 && close > open) ? t.substring(open + 1, close) : "";
+
+    const nameStart = ticker ? t.indexOf(" ") + 1 : 0;
+    const price = nameStart > 1 ? t.substring(0, nameStart).trim() : "";
+
+    const nameEnd = open > 0 ? open : t.length;
+    const name = t.substring(nameStart, nameEnd).trim();
+
     return { ticker, name, price };
   }
 
-  /** Build path for a job */
   function buildPath(job, ids) {
-    return `/stock/${job.section}?cid=${ids.cid}&tid=${ids.tid}&tab=${job.tab}&ref=${ids.ref}`;
+    return "/stock/" + job.section +
+      "?cid=" + ids.cid +
+      "&tid=" + ids.tid +
+      "&tab=" + job.tab +
+      "&ref=" + ids.ref;
   }
 
   /* ═══════════════════ navigation ═══════════════════ */
 
-  /**
-   * Navigate by pushing the Vue-router path.
-   * Falls back to location.href if router isn't available.
-   * Returns once URL has changed.
-   */
   async function navigateTo(path) {
     const target = location.origin + path;
-    if (location.href === target) return;  // already there
+    if (location.href === target) return;
 
-    // Try Vue router first (SPA-friendly, no full reload)
-    const router = document.querySelector("#app")?.__vue_app__?.config?.globalProperties?.$router
-                ?? document.querySelector("#app")?.__vue__?.$router;
+    const router =
+      document.querySelector("#app")?.__vue_app__?.config?.globalProperties?.$router ??
+      document.querySelector("#app")?.__vue__?.$router;
+
     if (router) {
       try { await router.push(path); } catch (_) { location.href = target; }
     } else {
       location.href = target;
     }
 
-    // Wait until URL matches
     const t0 = Date.now();
     while (Date.now() - t0 < 8000) {
       if (location.href === target) break;
@@ -109,42 +112,55 @@
 
   /* ═══════════════════ period selector ═══════════════════ */
 
-  /**
-   * Click the Anual / Trimestral button.
-   * Works on Financials & Estimates pages.
-   */
-  async function setPeriod(period /* "annual" | "quarterly" */) {
-    const wanted = period === "quarterly"
-      ? /^(trimestral|quarterly)$/i
-      : /^(anual|annual)$/i;
+  async function setPeriod(period) {
+    const isQ = period === "quarterly";
+    const wanted = isQ
+      ? (txt) => txt === "trimestral" || txt === "quarterly"
+      : (txt) => txt === "anual" || txt === "annual";
 
     const btn = [...document.querySelectorAll("button")].find((b) =>
-      wanted.test(b.innerText.trim())
+      wanted(b.innerText.trim().toLowerCase())
     );
     if (!btn) return;
-
-    // Already active?
     if (btn.classList.contains("primaryAction") || btn.classList.contains("v-btn--active")) return;
 
     btn.click();
-    await sleep(1800);   // wait for table re-render
+    await sleep(1800);
+  }
+
+  /* ═══════════════════ dataset selector (for Segments) ═══════════════════ */
+
+  async function setDatasetMorningstar() {
+    const datasetSelect = document.querySelector(".select-set");
+    if (!datasetSelect) return;
+
+    const current = datasetSelect.querySelector(".v-select__selection")?.innerText?.trim() || "";
+    if (current === "Morningstar") return;
+
+    const slot = datasetSelect.querySelector(".v-input__slot");
+    if (!slot) return;
+    slot.click();
+    await sleep(400);
+
+    const items = document.querySelectorAll(".v-list-item__title");
+    const ms = [...items].find((i) => i.innerText.trim() === "Morningstar");
+    if (ms) {
+      ms.click();
+      await sleep(2000);
+    }
   }
 
   /* ═══════════════════ table extraction ═══════════════════ */
 
-  /**
-   * Wait until at least one <table> with >2 rows appears.
-   * Returns the best (largest) table on the page.
-   */
-  async function waitForTable(timeout = 20000) {
+  async function waitForTable(timeout) {
+    timeout = timeout || 20000;
     const t0 = Date.now();
     while (Date.now() - t0 < timeout) {
       const tables = [...document.querySelectorAll("table")];
-      // pick the one with most rows
       let best = null, bestR = 0;
-      for (const t of tables) {
-        const r = t.querySelectorAll("tr").length;
-        if (r > bestR) { bestR = r; best = t; }
+      for (let i = 0; i < tables.length; i++) {
+        const r = tables[i].querySelectorAll("tr").length;
+        if (r > bestR) { bestR = r; best = tables[i]; }
       }
       if (best && bestR > 2) return best;
       await sleep(300);
@@ -152,30 +168,25 @@
     return null;
   }
 
-  /**
-   * Convert any TIKR <table> into a Markdown string.
-   * Handles: table.fintab, table.guidance, un-classed tables, multi-tables.
-   */
   function tableToMarkdown(table) {
     const rows = [];
-    for (const tr of table.querySelectorAll("tr")) {
-      const cells = [...tr.querySelectorAll("th,td")].map((c) => norm(c.innerText));
+    const trs = table.querySelectorAll("tr");
+    for (let i = 0; i < trs.length; i++) {
+      const cells = [...trs[i].querySelectorAll("th,td")].map((c) => norm(c.innerText));
       if (cells.length && cells.some((c) => c !== "")) rows.push(cells);
     }
     if (!rows.length) return "";
 
-    const w = Math.max(...rows.map((r) => r.length));
+    const w   = Math.max(...rows.map((r) => r.length));
     const pad = (r) => r.concat(Array(w - r.length).fill(""));
-    const hdr = pad(rows[0]);
-    const sep = hdr.map(() => "---");
+    const hdr  = pad(rows[0]);
+    const sep  = hdr.map(() => "---");
     const body = rows.slice(1).map(pad);
-    return [hdr, sep, ...body].map((r) => `| ${r.join(" | ")} |`).join("\\n");
+    return [hdr, sep, ...body].map((r) =>
+      "| " + r.join(" | ") + " |"
+    ).join("\\n");
   }
 
-  /**
-   * Scrape ALL tables visible on the current page (some views have 2+).
-   * Returns them concatenated with a blank line separator.
-   */
   function scrapeAllTablesOnPage() {
     const tables = [...document.querySelectorAll("table")];
     if (!tables.length) return "";
@@ -184,66 +195,60 @@
 
   /* ═══════════════════ main runner ═══════════════════ */
 
-  /**
-   * @param {string[]} jobKeys  – subset of JOBS keys the user chose
-   * @param {"annual"|"quarterly"} period
-   */
   async function run(jobKeys, period) {
-    const ids  = getIds();
-    const meta = getMeta();
+    const ids   = getIds();
+    const meta  = getMeta();
     const total = jobKeys.length;
-    let done = 0;
+    let done    = 0;
 
-    // Header
     const chunks = [];
-    chunks.push(`# ${meta.ticker} – ${meta.name}`);
-    chunks.push(`Price: US$${meta.price}  |  Extracted: ${new Date().toISOString()}`);
-    chunks.push(`Period: ${period}  |  Sections: ${total}`);
+    chunks.push("# " + meta.ticker + " \\u2013 " + meta.name);
+    chunks.push("Price: " + meta.price + "  |  Extracted: " + new Date().toISOString());
+    chunks.push("Period: " + period + "  |  Sections: " + total);
     chunks.push("---\\n");
 
-    for (const key of jobKeys) {
+    for (let k = 0; k < jobKeys.length; k++) {
+      const key = jobKeys[k];
       const job = JOBS[key];
       if (!job) continue;
 
       done++;
-      relay({ type: "SCRAPE_PROGRESS", done, total, current: job.label });
-      toast(`(${done}/${total}) ${job.label}…`);
+      relay({ type: "SCRAPE_PROGRESS", done: done, total: total, current: job.label });
+      toast("(" + done + "/" + total + ") " + job.label + "\\u2026");
 
-      // Navigate
       const path = buildPath(job, ids);
       await navigateTo(path);
-      await sleep(1500);          // let Vue render
+      await sleep(1500);
 
-      // Wait for table
-      const table = await waitForTable();
+      if (job.tab === "seg") {
+        await setDatasetMorningstar();
+      }
+
+      let table = await waitForTable();
       if (!table) {
-        chunks.push(`## ${job.label}\\n\\n_No data available._\\n`);
+        chunks.push("## " + job.label + "\\n\\n_No data available._\\n");
         continue;
       }
 
-      // Set period (only relevant for financials & estimates, harmless elsewhere)
-      if (["financials", "estimates"].includes(job.section)) {
+      if (job.section === "financials" || job.section === "estimates") {
         await setPeriod(period);
-        // Re-wait in case period change triggered a re-render
+        await sleep(500);
         await waitForTable();
       }
 
-      // Extract
       const md = scrapeAllTablesOnPage();
-      chunks.push(`## ${job.label}\\n\\n${md}\\n`);
+      chunks.push("## " + job.label + "\\n\\n" + md + "\\n");
     }
 
-    // Done – assemble
     const fullText = chunks.join("\\n");
 
-    relay({ type: "SCRAPE_DONE", text: fullText, meta });
-    toast("✅ All done!");
+    relay({ type: "SCRAPE_DONE", text: fullText, meta: meta });
+    toast("\\u2705 All done!");
 
-    // Also copy to clipboard
     try { await navigator.clipboard.writeText(fullText); } catch (_) {}
   }
 
   /* ═══════════════════ expose ═══════════════════ */
 
-  window.__tikrScraper = { run, JOBS };
+  window.__tikrScraper = { run: run, JOBS: JOBS };
 })();

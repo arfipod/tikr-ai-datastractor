@@ -65,7 +65,7 @@
   <!-- AUTO-SCRAPE -->
   <div class="card">
     <h3>📅 Period</h3>
-    <select id="period">
+    <select id="period" name="period">
       <option value="annual">Annual</option>
       <option value="quarterly">Quarterly</option>
     </select>
@@ -74,31 +74,31 @@
   <div class="card">
     <h3>💰 Financials</h3>
     <div class="chks">
-      <label><input type="checkbox" value="incomeStatement" checked> Income Statement</label>
-      <label><input type="checkbox" value="balanceSheet"    checked> Balance Sheet</label>
-      <label><input type="checkbox" value="cashFlow"        checked> Cash Flow</label>
-      <label><input type="checkbox" value="ratios"          checked> Ratios</label>
-      <label><input type="checkbox" value="segments"               > Segments</label>
+      <label for="cb-incomeStatement"><input type="checkbox" id="cb-incomeStatement" name="incomeStatement" value="incomeStatement" checked> Income Statement</label>
+      <label for="cb-balanceSheet"><input type="checkbox" id="cb-balanceSheet" name="balanceSheet" value="balanceSheet" checked> Balance Sheet</label>
+      <label for="cb-cashFlow"><input type="checkbox" id="cb-cashFlow" name="cashFlow" value="cashFlow" checked> Cash Flow</label>
+      <label for="cb-ratios"><input type="checkbox" id="cb-ratios" name="ratios" value="ratios" checked> Ratios</label>
+      <label for="cb-segments"><input type="checkbox" id="cb-segments" name="segments" value="segments"> Segments</label>
     </div>
   </div>
 
   <div class="card">
     <h3>💎 Valuation</h3>
     <div class="chks">
-      <label><input type="checkbox" value="multiples"      checked> Multiples</label>
-      <label><input type="checkbox" value="analystTargets" checked> Analyst Price Targets</label>
-      <label><input type="checkbox" value="competitors"           > Competitors</label>
+      <label for="cb-multiples"><input type="checkbox" id="cb-multiples" name="multiples" value="multiples" checked> Multiples</label>
+      <label for="cb-analystTargets"><input type="checkbox" id="cb-analystTargets" name="analystTargets" value="analystTargets" checked> Analyst Price Targets</label>
+      <label for="cb-competitors"><input type="checkbox" id="cb-competitors" name="competitors" value="competitors"> Competitors</label>
     </div>
   </div>
 
   <div class="card">
     <h3>📈 Estimates</h3>
     <div class="chks">
-      <label><input type="checkbox" value="estimates"      checked> Consensus Estimates</label>
-      <label><input type="checkbox" value="guidance"              > Management Guidance</label>
-      <label><input type="checkbox" value="earningsReview"        > Earnings Review</label>
-      <label><input type="checkbox" value="beatsMisses"           > Beats & Misses</label>
-      <label><input type="checkbox" value="estBreakdown"          > Estimates Breakdown</label>
+      <label for="cb-estimates"><input type="checkbox" id="cb-estimates" name="estimates" value="estimates" checked> Consensus Estimates</label>
+      <label for="cb-guidance"><input type="checkbox" id="cb-guidance" name="guidance" value="guidance"> Management Guidance</label>
+      <label for="cb-earningsReview"><input type="checkbox" id="cb-earningsReview" name="earningsReview" value="earningsReview"> Earnings Review</label>
+      <label for="cb-beatsMisses"><input type="checkbox" id="cb-beatsMisses" name="beatsMisses" value="beatsMisses"> Beats & Misses</label>
+      <label for="cb-estBreakdown"><input type="checkbox" id="cb-estBreakdown" name="estBreakdown" value="estBreakdown"> Estimates Breakdown</label>
     </div>
   </div>
 
@@ -108,7 +108,7 @@
   <!-- OUTPUT -->
   <div class="card">
     <h3>Output</h3>
-    <textarea id="out" placeholder="Extracted data appears here…" readonly></textarea>
+    <textarea id="out" name="out" placeholder="Extracted data appears here…" readonly></textarea>
     <div class="row">
       <button class="btn-sm btn-copy" id="copyBtn" disabled>📋 Copy all</button>
       <button class="btn-sm btn-copy" id="dlBtn"   disabled>💾 Download .md</button>
