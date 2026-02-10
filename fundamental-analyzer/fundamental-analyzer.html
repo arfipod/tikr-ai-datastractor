@@ -1,0 +1,2054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fundamental Analyzer — Stock Health Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700&family=JetBrains+Mono:wght@400;600&family=Playfair+Display:wght@700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2234;
+  --border: #1e2d45;
+  --text: #e2e8f0;
+  --text-dim: #8094b0;
+  --accent: #38bdf8;
+  --accent-glow: rgba(56,189,248,0.15);
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.12);
+  --yellow: #f59e0b;
+  --yellow-dim: rgba(245,158,11,0.12);
+  --purple: #a78bfa;
+  --purple-dim: rgba(167,139,250,0.12);
+  --orange: #fb923c;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  line-height:1.6;
+  min-height:100vh;
+}
+.mono{font-family:'JetBrains Mono',monospace}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-dim)}
+
+/* LANDING / INPUT */
+#landing{
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:2rem;
+  background:radial-gradient(ellipse at 50% 0%,rgba(56,189,248,0.06) 0%,transparent 60%);
+}
+#landing h1{
+  font-family:'Playfair Display',serif;font-weight:900;
+  font-size:clamp(2rem,5vw,3.5rem);text-align:center;
+  margin-bottom:.5rem;letter-spacing:-0.02em;
+  background:linear-gradient(135deg,#e2e8f0,#38bdf8);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+#landing .subtitle{color:var(--text-dim);text-align:center;margin-bottom:2rem;font-size:1.05rem}
+.input-wrap{
+  width:100%;max-width:800px;position:relative;
+}
+#dataInput{
+  width:100%;min-height:300px;max-height:50vh;
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--radius);color:var(--text);
+  font-family:'JetBrains Mono',monospace;font-size:0.82rem;
+  padding:1.25rem;resize:vertical;outline:none;
+  transition:border-color .2s;
+}
+#dataInput:focus{border-color:var(--accent)}
+#dataInput::placeholder{color:var(--text-dim);opacity:.6}
+.btn-analyze{
+  margin-top:1.25rem;padding:.85rem 2.5rem;
+  background:linear-gradient(135deg,#38bdf8,#818cf8);
+  color:#fff;font-weight:700;font-size:1rem;
+  border:none;border-radius:var(--radius);cursor:pointer;
+  transition:transform .15s,box-shadow .2s;
+  box-shadow:0 4px 24px rgba(56,189,248,0.25);
+}
+.btn-analyze:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(56,189,248,0.35)}
+.btn-analyze:active{transform:translateY(0)}
+#error-msg{color:var(--red);margin-top:.75rem;font-size:.9rem;display:none}
+
+/* DASHBOARD */
+#dashboard{display:none;padding:1.5rem;max-width:1440px;margin:0 auto}
+.dash-header{
+  display:flex;align-items:baseline;justify-content:space-between;
+  flex-wrap:wrap;gap:1rem;margin-bottom:2rem;
+  padding-bottom:1.5rem;border-bottom:1px solid var(--border);
+}
+.dash-header h2{
+  font-family:'Playfair Display',serif;font-weight:900;
+  font-size:clamp(1.5rem,3vw,2.2rem);
+  background:linear-gradient(135deg,#e2e8f0,#38bdf8);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.dash-header .price{font-size:1.3rem;color:var(--text-dim)}
+.btn-back{
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text-dim);padding:.5rem 1rem;border-radius:var(--radius-sm);
+  cursor:pointer;font-size:.85rem;transition:all .15s;
+}
+.btn-back:hover{border-color:var(--accent);color:var(--accent)}
+
+/* SCORE CARDS ROW */
+.score-row{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:1rem;margin-bottom:2rem;
+}
+.score-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1.25rem;
+  position:relative;overflow:hidden;
+}
+.score-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  border-radius:var(--radius) var(--radius) 0 0;
+}
+.score-card.excellent::before{background:var(--green)}
+.score-card.good::before{background:var(--accent)}
+.score-card.average::before{background:var(--yellow)}
+.score-card.poor::before{background:var(--red)}
+.score-card .label{font-size:.78rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem}
+.score-card .value{font-size:1.6rem;font-weight:700}
+.score-card .detail{font-size:.8rem;color:var(--text-dim);margin-top:.25rem}
+
+/* SECTIONS */
+.section{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);margin-bottom:1.5rem;
+  overflow:hidden;
+}
+.section-head{
+  padding:1rem 1.25rem;display:flex;align-items:center;gap:.75rem;
+  cursor:pointer;user-select:none;transition:background .15s;
+  border-bottom:1px solid transparent;
+}
+.section-head:hover{background:var(--surface2)}
+.section-head.open{border-bottom-color:var(--border)}
+.section-head h3{font-size:1rem;font-weight:700;flex:1}
+.section-head .badge{
+  font-size:.7rem;font-weight:600;padding:.2rem .6rem;
+  border-radius:99px;text-transform:uppercase;letter-spacing:.04em;
+}
+.badge-green{background:var(--green-dim);color:var(--green)}
+.badge-yellow{background:var(--yellow-dim);color:var(--yellow)}
+.badge-red{background:var(--red-dim);color:var(--red)}
+.badge-blue{background:var(--accent-glow);color:var(--accent)}
+.badge-purple{background:var(--purple-dim);color:var(--purple)}
+.chevron{
+  width:20px;height:20px;transition:transform .2s;color:var(--text-dim);
+}
+.section-head.open .chevron{transform:rotate(180deg)}
+.section-body{display:none;padding:1.25rem}
+.section-head.open + .section-body{display:block}
+
+/* ANALYSIS ITEMS */
+.analysis-grid{display:flex;flex-direction:column;gap:.75rem}
+.a-item{
+  display:grid;grid-template-columns:1fr auto;gap:.75rem;
+  padding:.85rem 1rem;border-radius:var(--radius-sm);
+  border:1px solid var(--border);transition:background .15s;
+}
+.a-item:hover{background:var(--surface2)}
+.a-item .metric-name{font-weight:500;font-size:.9rem}
+.a-item .metric-detail{font-size:.8rem;color:var(--text-dim);margin-top:.15rem}
+.a-item .metric-values{font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--text-dim);margin-top:.25rem}
+.a-item .signal{
+  display:flex;align-items:center;gap:.35rem;
+  font-size:.8rem;font-weight:600;white-space:nowrap;
+}
+.signal-bull{color:var(--green)}
+.signal-bear{color:var(--red)}
+.signal-neutral{color:var(--yellow)}
+.signal-info{color:var(--accent)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot-green{background:var(--green)}
+.dot-yellow{background:var(--yellow)}
+.dot-red{background:var(--red)}
+.dot-blue{background:var(--accent)}
+
+/* TREND MINI CHARTS */
+.trend-bar{
+  display:flex;align-items:flex-end;gap:2px;height:32px;margin-top:.35rem;
+}
+.trend-bar .bar{
+  flex:1;min-width:4px;max-width:18px;border-radius:2px 2px 0 0;
+  transition:height .3s;
+}
+.bar-pos{background:var(--green)}
+.bar-neg{background:var(--red)}
+.bar-zero{background:var(--border);min-height:2px}
+
+/* SUMMARY BOX */
+.summary-box{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:1.25rem;margin-top:1rem;
+}
+.summary-box h4{font-size:.9rem;margin-bottom:.5rem;color:var(--accent)}
+.summary-box p{font-size:.85rem;color:var(--text-dim);line-height:1.65}
+
+/* RESPONSIVE */
+@media(max-width:640px){
+  .score-row{grid-template-columns:1fr 1fr}
+  .a-item{grid-template-columns:1fr}
+  .a-item .signal{justify-content:flex-start}
+}
+
+/* ANIMATIONS */
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp .4s ease-out both}
+.delay-1{animation-delay:.05s}.delay-2{animation-delay:.1s}
+.delay-3{animation-delay:.15s}.delay-4{animation-delay:.2s}
+.delay-5{animation-delay:.25s}.delay-6{animation-delay:.3s}
+
+/* TOOLTIP */
+.tip{position:relative;cursor:help;border-bottom:1px dashed var(--text-dim)}
+.tip:hover::after{
+  content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;
+  transform:translateX(-50%);background:#1e293b;color:var(--text);
+  padding:.4rem .65rem;border-radius:6px;font-size:.75rem;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);z-index:10;pointer-events:none;
+}
+
+/* METRIC COUNT BADGE */
+.metric-count{
+  font-size:.7rem;color:var(--text-dim);margin-left:auto;padding-right:.5rem;
+}
+</style>
+</head>
+<body>
+
+<!-- LANDING -->
+<div id="landing">
+  <h1>Fundamental Analyzer</h1>
+  <p class="subtitle">Paste TIKR-format financials below and get an instant health diagnosis</p>
+  <div class="input-wrap">
+    <textarea id="dataInput" placeholder="Paste your TIKR financial data here...&#10;&#10;Example format:&#10;MEDP – Medpace Holdings, Inc.&#10;Price: US$530.35 | Extracted: ...&#10;Period: annual | Sections: 7&#10;---&#10;Income Statement&#10;| Cuenta de resultados | TIKR.com | 31/12/13 | ..."></textarea>
+    <div style="display:flex;justify-content:center">
+      <button class="btn-analyze" onclick="analyzeData()">Analyze Financials</button>
+    </div>
+    <div id="error-msg"></div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard"></div>
+
+<script>
+// =========================================================
+// PARSER — Converts TIKR markdown tables to structured data
+// =========================================================
+function parseNumber(s) {
+  if (!s || typeof s !== 'string') return null;
+  s = s.trim();
+  if (s === '' || s === '-') return null;
+  const isPct = s.includes('%');
+  let neg = false;
+  if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1,-1); }
+  s = s.replace(/US\$/g,'').replace(/\$/g,'').replace(/%/g,'').replace(/x$/i,'').trim();
+  if (s === '') return null;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma > lastDot) {
+    s = s.replace(/\./g,'').replace(',','.');
+  } else if (lastDot > lastComma) {
+    s = s.replace(/,/g,'');
+  } else {
+    s = s.replace(/,/g,'');
+  }
+  const val = parseFloat(s);
+  if (isNaN(val)) return null;
+  return neg ? -val : val;
+}
+
+function parseTIKR(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l);
+  const data = { ticker: '', company: '', price: null, priceNum: null, extractDate: '', period: '', sections: {} };
+  const tickerLine = lines[0] || '';
+  const tickerMatch = tickerLine.match(/^([A-Z0-9.]+)\s*[–—-]\s*(.+)/);
+  if (tickerMatch) { data.ticker = tickerMatch[1]; data.company = tickerMatch[2]; }
+  else { data.company = tickerLine; }
+
+  for (const l of lines) {
+    const pm = l.match(/Price:\s*(US\$[\d.,]+)/);
+    if (pm) { data.price = pm[1]; data.priceNum = parseNumber(pm[1]); }
+    const dm = l.match(/Extracted:\s*(.+)/);
+    if (dm) data.extractDate = dm[1];
+    const prm = l.match(/Period:\s*(\w+)/);
+    if (prm) data.period = prm[1];
+  }
+
+  const sectionNames = [
+    'Income Statement', 'Balance Sheet', 'Cash Flow', 'Ratios',
+    'Valuation Multiples', 'Analyst Price Targets', 'Consensus Estimates'
+  ];
+  let currentSection = null;
+  let sectionLines = {};
+  for (const l of lines) {
+    const cleaned = l.replace(/^#+\s*/, '');
+    const matchedSection = sectionNames.find(n => cleaned === n || cleaned.startsWith(n));
+    if (matchedSection) {
+      currentSection = matchedSection;
+      sectionLines[currentSection] = [];
+      continue;
+    }
+    if (currentSection && l.startsWith('|')) {
+      sectionLines[currentSection].push(l);
+    }
+  }
+
+  for (const [secName, rows] of Object.entries(sectionLines)) {
+    const parsed = [];
+    let dates = [];
+    for (const row of rows) {
+      const cells = row.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length);
+      if (cells.length < 2) continue;
+      if (cells[0] === '---' || cells.every(c => c === '---' || c === '')) continue;
+      const label = cells[0];
+      if ((label.includes('TIKR') || label.includes('Cuenta') || label.includes('Balance') ||
+           label.includes('Cash Flow') || label.includes('Ratios') || label.includes('Múltiplos') ||
+           label.includes('Objetivos') || label.includes('Estimaciones')) && cells.some(c => c.match(/\d{2}\/\d{2}\/\d{2}/))) {
+        dates = cells.slice(1).map(c => c.replace('TIKR.com','').trim());
+        continue;
+      }
+      if (label === 'TIKR.com' || label === '---') continue;
+      const values = cells.slice(1);
+      parsed.push({ label, values, dates });
+    }
+    data.sections[secName] = { dates, rows: parsed };
+  }
+  return data;
+}
+
+// =========================================================
+// ANALYSIS ENGINE — COMPREHENSIVE HEURISTICS
+// =========================================================
+function getRecentValues(row, n = 5) {
+  if (!row) return [];
+  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
+  return vals.slice(-n);
+}
+
+function getLatest(row) {
+  if (!row) return null;
+  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
+  return vals.length > 0 ? vals[vals.length - 1] : null;
+}
+
+function getPrevious(row) {
+  if (!row) return null;
+  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
+  return vals.length > 1 ? vals[vals.length - 2] : null;
+}
+
+function getTrend(vals) {
+  if (!vals || vals.length < 2) return 'neutral';
+  let ups = 0, downs = 0;
+  for (let i = 1; i < vals.length; i++) {
+    if (vals[i] > vals[i-1]) ups++;
+    else if (vals[i] < vals[i-1]) downs++;
+  }
+  if (ups > downs + 1) return 'up';
+  if (downs > ups + 1) return 'down';
+  return 'stable';
+}
+
+function cagr(first, last, years) {
+  if (!first || !last || first <= 0 || last <= 0 || years <= 0) return null;
+  return (Math.pow(last / first, 1 / years) - 1) * 100;
+}
+
+function avg(arr) {
+  const valid = arr.filter(v => v !== null && !isNaN(v));
+  return valid.length ? valid.reduce((a,b) => a+b, 0) / valid.length : null;
+}
+
+function stddev(arr) {
+  const valid = arr.filter(v => v !== null && !isNaN(v));
+  if (valid.length < 2) return null;
+  const m = avg(valid);
+  return Math.sqrt(valid.reduce((s, v) => s + (v - m) ** 2, 0) / (valid.length - 1));
+}
+
+function yoyGrowth(vals) {
+  if (!vals || vals.length < 2) return [];
+  return vals.slice(1).map((v, i) => {
+    const prev = vals[i];
+    if (!prev || prev === 0) return null;
+    return ((v - prev) / Math.abs(prev)) * 100;
+  });
+}
+
+// Helper to create a standard analysis item
+function makeItem(name, detail, vals, signal, signalText, explanation) {
+  return { name, detail: detail || '', values: vals || [], signal: signal || 'neutral', signalText: signalText || '', explanation: explanation || '' };
+}
+
+function analyze(data) {
+  const results = { scores: {}, sections: [] };
+  const is = data.sections['Income Statement'];
+  const bs = data.sections['Balance Sheet'];
+  const cf = data.sections['Cash Flow'];
+  const ratios = data.sections['Ratios'];
+  const vm = data.sections['Valuation Multiples'];
+  const apt = data.sections['Analyst Price Targets'];
+  const ce = data.sections['Consensus Estimates'];
+
+  // Helper to find row by partial label match (case-insensitive, multi-keyword)
+  function findRow(section, ...keywords) {
+    if (!section) return null;
+    return section.rows.find(r => {
+      const l = r.label.toLowerCase();
+      const matches = keywords.every(k => l.includes(k.toLowerCase()));
+      if (!matches) return false;
+      return r.values.some(v => parseNumber(v) !== null);
+    });
+  }
+
+  // Find row trying multiple keyword sets
+  function findRowAny(section, ...keywordSets) {
+    for (const kw of keywordSets) {
+      const row = Array.isArray(kw) ? findRow(section, ...kw) : findRow(section, kw);
+      if (row) return row;
+    }
+    return null;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 1. REVENUE & GROWTH ANALYSIS
+  // ══════════════════════════════════════════════════════════
+  const growthItems = [];
+
+  const revenueRow = findRowAny(is, 'Ingresos totales', 'Revenue As Reported', 'Total Revenue');
+  if (revenueRow) {
+    const vals = getRecentValues(revenueRow, 10);
+    const latest = vals[vals.length - 1];
+    const five = vals.length >= 6 ? vals[vals.length - 6] : vals[0];
+    const years = vals.length >= 6 ? 5 : vals.length - 1;
+    const gr = cagr(five, latest, years);
+    growthItems.push(makeItem(
+      'Revenue Growth (CAGR)',
+      gr !== null ? `${years}Y CAGR: ${gr.toFixed(1)}%` : 'Insufficient data',
+      vals,
+      gr > 15 ? 'bull' : gr > 8 ? 'neutral' : 'bear',
+      gr > 15 ? 'Strong' : gr > 8 ? 'Moderate' : gr > 0 ? 'Slow' : 'Declining',
+      `Revenue: ${five?.toFixed(0)} → ${latest?.toFixed(0)}`
+    ));
+
+    // YoY revenue growth consistency
+    const yoyGr = yoyGrowth(vals);
+    const validYoy = yoyGr.filter(v => v !== null);
+    if (validYoy.length >= 3) {
+      const latestYoy = validYoy[validYoy.length - 1];
+      const avgYoy = avg(validYoy);
+      const sd = stddev(validYoy);
+      const consistent = sd !== null && sd < 10;
+      growthItems.push(makeItem(
+        'Revenue YoY Growth',
+        `Latest YoY: ${latestYoy?.toFixed(1)}% | Avg: ${avgYoy?.toFixed(1)}%`,
+        validYoy,
+        latestYoy > 10 ? 'bull' : latestYoy > 3 ? 'neutral' : 'bear',
+        consistent ? 'Consistent' : 'Volatile',
+        sd !== null ? `Std dev: ${sd.toFixed(1)}pp — ${consistent ? 'predictable' : 'erratic'} growth` : ''
+      ));
+    }
+  }
+
+  const epsRow = findRowAny(is, 'Diluted EPS', ['BPA', 'Diluido'], 'EPS Diluted');
+  if (epsRow) {
+    const vals = getRecentValues(epsRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const years = vals.length - 1;
+    const gr = cagr(Math.abs(first), Math.abs(latest), years);
+    growthItems.push(makeItem(
+      'EPS Growth (Diluted)',
+      gr !== null ? `${years}Y CAGR: ${gr.toFixed(1)}%` : 'N/A',
+      vals,
+      gr > 15 ? 'bull' : gr > 8 ? 'neutral' : 'bear',
+      gr > 15 ? 'Excellent' : gr > 8 ? 'Good' : 'Weak'
+    ));
+  }
+
+  // EPS Basic for comparison
+  const epsBasicRow = findRowAny(is, ['BPA', 'Básico'], 'Basic EPS', 'EPS Basic');
+  if (epsBasicRow && epsRow) {
+    const diluted = getLatest(epsRow);
+    const basic = getLatest(epsBasicRow);
+    if (diluted && basic && basic !== 0) {
+      const dilutionPct = ((basic - diluted) / basic) * 100;
+      if (dilutionPct > 3) {
+        growthItems.push(makeItem(
+          'Dilution Impact (Basic vs Diluted EPS)',
+          `Basic: ${basic.toFixed(2)} vs Diluted: ${diluted.toFixed(2)} (${dilutionPct.toFixed(1)}% dilution)`,
+          [],
+          dilutionPct < 3 ? 'bull' : dilutionPct < 8 ? 'neutral' : 'bear',
+          dilutionPct < 3 ? 'Minimal Dilution' : dilutionPct < 8 ? 'Moderate' : 'Heavy Dilution'
+        ));
+      }
+    }
+  }
+
+  const ebitdaRow = findRowAny(is, 'Normalized EBITDA', 'EBITDA');
+  if (ebitdaRow) {
+    const vals = getRecentValues(ebitdaRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const gr = cagr(first, latest, vals.length - 1);
+    growthItems.push(makeItem(
+      'EBITDA Growth',
+      gr !== null ? `CAGR: ${gr.toFixed(1)}%` : 'N/A',
+      vals,
+      gr > 12 ? 'bull' : gr > 5 ? 'neutral' : 'bear',
+      gr > 12 ? 'Strong' : gr > 5 ? 'Moderate' : 'Weak'
+    ));
+  }
+
+  const opIncRow = findRowAny(is, 'Ingresos de explotación', 'Operating Income');
+  if (opIncRow) {
+    const vals = getRecentValues(opIncRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const gr = cagr(Math.abs(first), Math.abs(latest), vals.length - 1);
+    growthItems.push(makeItem(
+      'Operating Income Growth',
+      gr !== null ? `CAGR: ${gr.toFixed(1)}%` : 'N/A',
+      vals,
+      gr > 12 ? 'bull' : gr > 5 ? 'neutral' : 'bear',
+      gr > 12 ? 'Strong' : gr > 5 ? 'Moderate' : 'Weak'
+    ));
+  }
+
+  const netIncRow = findRowAny(is, 'Beneficio neto', 'Net Income');
+  if (netIncRow) {
+    const vals = getRecentValues(netIncRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const gr = cagr(Math.abs(first), Math.abs(latest), vals.length - 1);
+    growthItems.push(makeItem(
+      'Net Income Growth',
+      gr !== null ? `CAGR: ${gr.toFixed(1)}%` : 'N/A',
+      vals,
+      gr > 12 ? 'bull' : gr > 5 ? 'neutral' : 'bear',
+      gr > 12 ? 'Strong' : gr > 5 ? 'Moderate' : 'Weak'
+    ));
+  }
+
+  const fcfRow = findRowAny(cf, 'Flujo de caja libre', 'Free Cash Flow');
+  if (fcfRow) {
+    const vals = getRecentValues(fcfRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const gr = cagr(Math.abs(first), Math.abs(latest), vals.length - 1);
+    growthItems.push(makeItem(
+      'Free Cash Flow Growth',
+      gr !== null ? `CAGR: ${gr.toFixed(1)}%` : 'N/A',
+      vals,
+      gr > 12 ? 'bull' : gr > 5 ? 'neutral' : 'bear',
+      gr > 12 ? 'Strong' : gr > 5 ? 'Decent' : 'Weak'
+    ));
+  }
+
+  if (growthItems.length) {
+    const bullCount = growthItems.filter(i => i.signal === 'bull').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.growth = grade;
+    results.sections.push({ title: 'Growth', icon: '📈', grade, items: growthItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 2. PROFITABILITY & MARGINS
+  // ══════════════════════════════════════════════════════════
+  const marginItems = [];
+
+  const grossRow = findRowAny(is, 'Márgenes brutos', ['Margen', 'bruto']);
+  const grossRowR = findRowAny(ratios, 'Margen de beneficio bruto', 'Gross Margin');
+  const grossSrc = grossRow || grossRowR;
+  if (grossSrc) {
+    const vals = getRecentValues(grossSrc, 10);
+    const latest = vals[vals.length - 1];
+    const trend = getTrend(vals);
+    const sd = stddev(vals);
+    marginItems.push(makeItem(
+      'Gross Margin',
+      `Latest: ${latest?.toFixed(1)}% — Trend: ${trend}`,
+      vals,
+      latest > 40 ? 'bull' : latest > 25 ? 'neutral' : 'bear',
+      latest > 50 ? 'Wide Moat' : latest > 40 ? 'Strong' : latest > 25 ? 'Decent' : 'Thin',
+      sd !== null ? `Stability: σ=${sd.toFixed(1)}pp (${sd < 3 ? 'very stable' : sd < 6 ? 'stable' : 'volatile'})` : ''
+    ));
+  }
+
+  const opRow = findRowAny(is, 'Márgenes operativos', ['Margen', 'operativo']);
+  const opRowR = findRowAny(ratios, 'Margen EBIT', 'Operating Margin');
+  const opSrc = opRow || opRowR;
+  if (opSrc) {
+    const vals = getRecentValues(opSrc, 10);
+    const latest = vals[vals.length - 1];
+    const trend = getTrend(vals);
+    marginItems.push(makeItem(
+      'Operating Margin (EBIT)',
+      `Latest: ${latest?.toFixed(1)}% — Trend: ${trend}`,
+      vals,
+      latest > 20 ? 'bull' : latest > 10 ? 'neutral' : 'bear',
+      latest > 25 ? 'Best-in-class' : latest > 20 ? 'Excellent' : latest > 10 ? 'Healthy' : 'Compressed'
+    ));
+  }
+
+  const ebitdaMarginRow = findRowAny(ratios, 'Margen EBITDA', 'EBITDA Margin');
+  if (ebitdaMarginRow) {
+    const vals = getRecentValues(ebitdaMarginRow, 10);
+    const latest = vals[vals.length - 1];
+    marginItems.push(makeItem(
+      'EBITDA Margin',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 25 ? 'bull' : latest > 15 ? 'neutral' : 'bear',
+      latest > 30 ? 'Elite' : latest > 25 ? 'Strong' : latest > 15 ? 'Fair' : 'Low'
+    ));
+  }
+
+  const netMRow = findRowAny(is, 'márgenes de beneficio neto');
+  const netMRowR = findRowAny(ratios, 'Margen neto', 'Net Margin');
+  const netMSrc = netMRow || netMRowR;
+  if (netMSrc) {
+    const vals = getRecentValues(netMSrc, 10);
+    const latest = vals[vals.length - 1];
+    marginItems.push(makeItem(
+      'Net Profit Margin',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 15 ? 'bull' : latest > 8 ? 'neutral' : 'bear',
+      latest > 20 ? 'Exceptional' : latest > 15 ? 'High Quality' : latest > 8 ? 'OK' : 'Low'
+    ));
+  }
+
+  const fcfMarginRow = findRowAny(cf, 'Free Cash Flow Margin');
+  const fcfMarginRowR = findRowAny(ratios, 'Free Cash Flow Margin', 'FCF Margin');
+  const fcfMSrc = fcfMarginRow || fcfMarginRowR;
+  if (fcfMSrc) {
+    const vals = getRecentValues(fcfMSrc, 10);
+    const latest = vals[vals.length - 1];
+    marginItems.push(makeItem(
+      'FCF Margin',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 20 ? 'bull' : latest > 10 ? 'neutral' : 'bear',
+      latest > 25 ? 'Cash Machine' : latest > 20 ? 'Excellent' : latest > 10 ? 'Solid' : 'Weak'
+    ));
+  }
+
+  // Margin expansion check: operating margin expanding vs gross?
+  if (grossSrc && opSrc) {
+    const grossVals = getRecentValues(grossSrc, 6);
+    const opVals = getRecentValues(opSrc, 6);
+    if (grossVals.length >= 3 && opVals.length >= 3) {
+      const grossDelta = grossVals[grossVals.length - 1] - grossVals[0];
+      const opDelta = opVals[opVals.length - 1] - opVals[0];
+      const expanding = opDelta > 0 && opDelta >= grossDelta;
+      marginItems.push(makeItem(
+        'Operating Leverage',
+        `Gross Δ: ${grossDelta > 0 ? '+' : ''}${grossDelta.toFixed(1)}pp | Op Δ: ${opDelta > 0 ? '+' : ''}${opDelta.toFixed(1)}pp`,
+        [],
+        expanding ? 'bull' : opDelta > 0 ? 'neutral' : 'bear',
+        expanding ? 'Positive Leverage' : opDelta > 0 ? 'Some Leverage' : 'Margin Compression',
+        expanding ? 'Operating margins expanding faster than gross → scaling well' : 'Watch for cost structure issues'
+      ));
+    }
+  }
+
+  if (marginItems.length) {
+    const bullCount = marginItems.filter(i => i.signal === 'bull').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.margins = grade;
+    results.sections.push({ title: 'Profitability & Margins', icon: '💰', grade, items: marginItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 3. COST STRUCTURE & OPEX ANALYSIS
+  // ══════════════════════════════════════════════════════════
+  const costItems = [];
+
+  // COGS analysis
+  const cogsRow = findRowAny(is, 'Coste de los ingresos', 'Cost of Goods Sold', 'COGS');
+  if (cogsRow && revenueRow) {
+    const cogsVals = getRecentValues(cogsRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (cogsVals.length >= 2 && revVals.length >= 2) {
+      const latestPct = (cogsVals[cogsVals.length - 1] / revVals[revVals.length - 1]) * 100;
+      const firstPct = (cogsVals[0] / revVals[0]) * 100;
+      const delta = latestPct - firstPct;
+      costItems.push(makeItem(
+        'COGS as % of Revenue',
+        `Latest: ${latestPct.toFixed(1)}% (Δ ${delta > 0 ? '+' : ''}${delta.toFixed(1)}pp)`,
+        cogsVals,
+        delta < -2 ? 'bull' : delta < 2 ? 'neutral' : 'bear',
+        delta < -2 ? 'Improving' : delta < 2 ? 'Stable' : 'Rising Costs'
+      ));
+    }
+  }
+
+  // SG&A analysis
+  const sgaRow = findRowAny(is, 'Gastos de venta', 'Selling, General', 'SG&A');
+  if (sgaRow && revenueRow) {
+    const sgaVals = getRecentValues(sgaRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (sgaVals.length >= 2 && revVals.length >= 2) {
+      const latestPct = (Math.abs(sgaVals[sgaVals.length - 1]) / revVals[revVals.length - 1]) * 100;
+      const firstPct = (Math.abs(sgaVals[0]) / revVals[0]) * 100;
+      const delta = latestPct - firstPct;
+      costItems.push(makeItem(
+        'SG&A as % of Revenue',
+        `Latest: ${latestPct.toFixed(1)}% (Δ ${delta > 0 ? '+' : ''}${delta.toFixed(1)}pp)`,
+        sgaVals.map(v => Math.abs(v)),
+        delta < -1 ? 'bull' : latestPct < 25 ? 'neutral' : 'bear',
+        delta < -1 ? 'Improving Efficiency' : latestPct < 25 ? 'Controlled' : 'High Overhead',
+        'Lower is better — shows operational efficiency'
+      ));
+    }
+  }
+
+  // R&D analysis
+  const rdRow = findRowAny(is, 'Gastos de investigación', 'Research and Development', 'R&D');
+  if (rdRow && revenueRow) {
+    const rdVals = getRecentValues(rdRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (rdVals.length >= 2 && revVals.length >= 2) {
+      const latestPct = (Math.abs(rdVals[rdVals.length - 1]) / revVals[revVals.length - 1]) * 100;
+      costItems.push(makeItem(
+        'R&D as % of Revenue',
+        `Latest: ${latestPct.toFixed(1)}%`,
+        rdVals.map(v => Math.abs(v)),
+        latestPct > 5 ? 'bull' : latestPct > 2 ? 'neutral' : 'neutral',
+        latestPct > 15 ? 'Heavy Investment' : latestPct > 5 ? 'Investing in Innovation' : 'Low R&D',
+        'R&D investment sustains long-term competitive advantages'
+      ));
+    }
+  }
+
+  // D&A analysis
+  const daRow = findRowAny(is, 'Depreciación y amortización', 'Depreciation', 'D&A');
+  if (daRow && revenueRow) {
+    const daVals = getRecentValues(daRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (daVals.length >= 2 && revVals.length >= 2) {
+      const latestPct = (Math.abs(daVals[daVals.length - 1]) / revVals[revVals.length - 1]) * 100;
+      costItems.push(makeItem(
+        'D&A as % of Revenue',
+        `Latest: ${latestPct.toFixed(1)}%`,
+        daVals.map(v => Math.abs(v)),
+        latestPct < 5 ? 'bull' : latestPct < 10 ? 'neutral' : 'bear',
+        latestPct < 5 ? 'Asset-light' : latestPct < 10 ? 'Moderate' : 'Capital Intensive',
+        'High D&A = heavy fixed assets or acquisitions with amortization'
+      ));
+    }
+  }
+
+  // Effective Tax Rate
+  const taxRateRow = findRowAny(is, 'Tasa impositiva efectiva', 'Effective Tax Rate');
+  if (taxRateRow) {
+    const vals = getRecentValues(taxRateRow, 6);
+    const latest = vals[vals.length - 1];
+    const sd = stddev(vals);
+    if (latest !== null) {
+      costItems.push(makeItem(
+        'Effective Tax Rate',
+        `Latest: ${latest.toFixed(1)}%`,
+        vals,
+        latest > 10 && latest < 28 ? 'bull' : latest < 10 ? 'neutral' : 'bear',
+        latest < 10 ? 'Unusually Low (check sustainability)' : latest < 22 ? 'Tax Efficient' : latest < 28 ? 'Normal' : 'High Tax Burden',
+        sd !== null ? `Consistency: σ=${sd.toFixed(1)}pp — ${sd < 3 ? 'stable' : 'volatile tax rate'}` : ''
+      ));
+    }
+  }
+
+  // Interest Expense analysis
+  const intExpRow = findRowAny(is, 'Gastos por intereses', 'Interest Expense');
+  if (intExpRow && revenueRow) {
+    const intVals = getRecentValues(intExpRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (intVals.length >= 1 && revVals.length >= 1) {
+      const latestPct = (Math.abs(intVals[intVals.length - 1]) / revVals[revVals.length - 1]) * 100;
+      if (latestPct > 0.5) {
+        costItems.push(makeItem(
+          'Interest Expense as % of Revenue',
+          `Latest: ${latestPct.toFixed(1)}%`,
+          intVals.map(v => Math.abs(v)),
+          latestPct < 2 ? 'bull' : latestPct < 5 ? 'neutral' : 'bear',
+          latestPct < 2 ? 'Minimal' : latestPct < 5 ? 'Manageable' : 'Heavy Interest Burden'
+        ));
+      }
+    }
+  }
+
+  // Stock-Based Compensation
+  const sbcRow = findRowAny(cf, 'Compensación basada en acciones', 'Stock-Based Compensation', 'Stock Based Comp');
+  if (sbcRow && revenueRow) {
+    const sbcVals = getRecentValues(sbcRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (sbcVals.length >= 1 && revVals.length >= 1) {
+      const latestPct = (Math.abs(sbcVals[sbcVals.length - 1]) / revVals[revVals.length - 1]) * 100;
+      costItems.push(makeItem(
+        'Stock-Based Comp as % of Revenue',
+        `Latest: ${latestPct.toFixed(1)}%`,
+        sbcVals.map(v => Math.abs(v)),
+        latestPct < 3 ? 'bull' : latestPct < 8 ? 'neutral' : 'bear',
+        latestPct < 3 ? 'Low Dilution' : latestPct < 8 ? 'Moderate SBC' : 'Heavy SBC Dilution',
+        'High SBC overstates GAAP earnings vs true cash cost'
+      ));
+    }
+  }
+
+  if (costItems.length) {
+    const bullCount = costItems.filter(i => i.signal === 'bull').length;
+    const bearCount = costItems.filter(i => i.signal === 'bear').length;
+    const grade = bullCount >= 3 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 2 ? 'poor' : 'average';
+    results.scores.costs = grade;
+    results.sections.push({ title: 'Cost Structure & OpEx', icon: '🏗️', grade, items: costItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 4. RETURNS & ECONOMIC MOAT
+  // ══════════════════════════════════════════════════════════
+  const moatItems = [];
+
+  const roicRow = findRowAny(ratios, 'Return on Invested Capital', 'Normalized ROIC', 'ROIC');
+  if (roicRow) {
+    const vals = getRecentValues(roicRow, 10);
+    const latest = vals[vals.length - 1];
+    const trend = getTrend(vals);
+    const avgVal = avg(vals);
+    moatItems.push(makeItem(
+      'ROIC (Return on Invested Capital)',
+      `Latest: ${latest?.toFixed(1)}% | Avg: ${avgVal?.toFixed(1)}% — Trend: ${trend}`,
+      vals,
+      latest > 20 ? 'bull' : latest > 10 ? 'neutral' : 'bear',
+      latest > 25 ? 'Exceptional Moat' : latest > 20 ? 'Wide Moat' : latest > 10 ? 'Narrow Moat' : 'No Moat',
+      'ROIC > WACC (~8-10%) = value creation. Consistency matters more than level'
+    ));
+  }
+
+  const roeRow = findRowAny(ratios, 'Rentabilidad sobre recursos propios', 'recursos propios', 'ROE', 'Return on Equity');
+  if (roeRow) {
+    const vals = getRecentValues(roeRow, 10);
+    const latest = vals[vals.length - 1];
+    moatItems.push(makeItem(
+      'ROE (Return on Equity)',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 20 ? 'bull' : latest > 12 ? 'neutral' : 'bear',
+      latest > 25 ? 'Outstanding' : latest > 20 ? 'Excellent' : latest > 12 ? 'Good' : 'Below Average',
+      'Beware: high leverage can inflate ROE artificially'
+    ));
+  }
+
+  const roaRow = findRowAny(ratios, 'Rentabilidad sobre activos', 'ROA', 'Return on Assets');
+  if (roaRow) {
+    const vals = getRecentValues(roaRow, 10);
+    const latest = vals[vals.length - 1];
+    moatItems.push(makeItem(
+      'ROA (Return on Assets)',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 10 ? 'bull' : latest > 5 ? 'neutral' : 'bear',
+      latest > 15 ? 'Asset-light Star' : latest > 10 ? 'Efficient' : latest > 5 ? 'OK' : 'Capital Heavy'
+    ));
+  }
+
+  // Dupont decomposition insight: ROE driven by margins vs leverage
+  if (roeRow && roaRow) {
+    const roe = getLatest(roeRow);
+    const roa = getLatest(roaRow);
+    if (roe && roa && roa !== 0) {
+      const equityMultiplier = roe / roa;
+      moatItems.push(makeItem(
+        'Equity Multiplier (ROE/ROA)',
+        `${equityMultiplier.toFixed(1)}x — ${equityMultiplier < 2 ? 'Low leverage' : equityMultiplier < 3 ? 'Moderate leverage' : 'High leverage'}`,
+        [],
+        equityMultiplier < 2 ? 'bull' : equityMultiplier < 3 ? 'neutral' : 'bear',
+        equityMultiplier < 2 ? 'Quality ROE' : equityMultiplier < 3 ? 'Some Leverage' : 'Leverage-driven ROE',
+        'ROE = ROA × Equity Multiplier. Lower multiplier = ROE driven by profitability, not debt'
+      ));
+    }
+  }
+
+  const fcfNetRow = findRowAny(ratios, 'Free / Net Income', 'FCF / Net Income');
+  if (fcfNetRow) {
+    const vals = getRecentValues(fcfNetRow, 8);
+    const latest = vals[vals.length - 1];
+    moatItems.push(makeItem(
+      'FCF / Net Income (Earnings Quality)',
+      `Latest: ${latest?.toFixed(0)}%`,
+      vals,
+      latest > 100 ? 'bull' : latest > 70 ? 'neutral' : 'bear',
+      latest > 120 ? 'Super Cash Generative' : latest > 100 ? 'Quality Earnings' : latest > 70 ? 'Decent' : 'Accrual Heavy',
+      'FCF > Net Income = real cash earnings; <70% = beware accounting tricks'
+    ));
+  }
+
+  const capexSalesRow = findRowAny(ratios, 'Capex / Sales', 'Capex/Sales');
+  if (capexSalesRow) {
+    const vals = getRecentValues(capexSalesRow, 8);
+    const latest = vals[vals.length - 1];
+    moatItems.push(makeItem(
+      'Capex / Sales (Maintenance Need)',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest < 5 ? 'bull' : latest < 10 ? 'neutral' : 'bear',
+      latest < 3 ? 'Ultra Asset-light' : latest < 5 ? 'Asset-light' : latest < 10 ? 'Moderate' : 'Capital Intensive'
+    ));
+  }
+
+  if (moatItems.length) {
+    const bullCount = moatItems.filter(i => i.signal === 'bull').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.moat = grade;
+    results.sections.push({ title: 'Returns & Economic Moat', icon: '🏰', grade, items: moatItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 5. BALANCE SHEET HEALTH
+  // ══════════════════════════════════════════════════════════
+  const bsItems = [];
+
+  // Current Assets composition
+  const cashRow = findRowAny(bs, 'Efectivo y equivalentes', 'Cash and Cash Equivalents', 'Cash & Equivalents');
+  const stInvRow = findRowAny(bs, 'Inversiones a corto plazo', 'Short-Term Investments');
+  const arRow = findRowAny(bs, 'Cuentas por cobrar', 'Accounts Receivable', 'Trade Receivables');
+  const invRow = findRowAny(bs, 'Inventarios', 'Inventory', 'Inventories');
+  const totalCARow = findRowAny(bs, 'Total activos corrientes', 'Total Current Assets');
+  const totalAssetsRow = findRowAny(bs, 'Activos totales', 'Total Assets');
+
+  if (cashRow && totalAssetsRow) {
+    const cashVals = getRecentValues(cashRow, 6);
+    const taVals = getRecentValues(totalAssetsRow, 6);
+    if (cashVals.length >= 1 && taVals.length >= 1) {
+      const cashPct = (cashVals[cashVals.length - 1] / taVals[taVals.length - 1]) * 100;
+      bsItems.push(makeItem(
+        'Cash & Equivalents / Total Assets',
+        `Latest: ${cashPct.toFixed(1)}% ($${(cashVals[cashVals.length - 1]).toFixed(0)}M)`,
+        cashVals,
+        cashPct > 15 ? 'bull' : cashPct > 5 ? 'neutral' : 'bear',
+        cashPct > 20 ? 'Cash Rich' : cashPct > 15 ? 'Healthy Buffer' : cashPct > 5 ? 'Adequate' : 'Cash Light'
+      ));
+    }
+  }
+
+  if (arRow && revenueRow) {
+    const arVals = getRecentValues(arRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (arVals.length >= 2 && revVals.length >= 2) {
+      const arDays = (arVals[arVals.length - 1] / revVals[revVals.length - 1]) * 365;
+      const trend = getTrend(arVals.map((v, i) => revVals[i] ? (v / revVals[i]) * 365 : null));
+      bsItems.push(makeItem(
+        'Accounts Receivable (Days)',
+        `~${arDays.toFixed(0)} days — Trend: ${trend}`,
+        arVals,
+        arDays < 45 ? 'bull' : arDays < 75 ? 'neutral' : 'bear',
+        arDays < 30 ? 'Quick Collection' : arDays < 45 ? 'Healthy' : arDays < 75 ? 'Normal' : 'Slow Collection'
+      ));
+    }
+  }
+
+  if (invRow && revenueRow) {
+    const invVals = getRecentValues(invRow, 6);
+    const revVals = getRecentValues(revenueRow, 6);
+    if (invVals.length >= 1 && revVals.length >= 1) {
+      const latestInv = invVals[invVals.length - 1];
+      const cogsLatest = cogsRow ? getLatest(cogsRow) : null;
+      if (latestInv > 0) {
+        const daysRef = cogsLatest ? cogsLatest : revVals[revVals.length - 1];
+        const invDays = (latestInv / Math.abs(daysRef)) * 365;
+        bsItems.push(makeItem(
+          'Inventory (Days on Hand)',
+          `~${invDays.toFixed(0)} days | $${latestInv.toFixed(0)}M`,
+          invVals,
+          invDays < 45 ? 'bull' : invDays < 90 ? 'neutral' : 'bear',
+          invDays < 30 ? 'Lean' : invDays < 45 ? 'Efficient' : invDays < 90 ? 'Normal' : 'Heavy Inventory'
+        ));
+      }
+    }
+  }
+
+  // Goodwill & Intangibles as % of Total Assets
+  const gwRow = findRowAny(bs, 'Fondo de comercio', 'Goodwill');
+  const intangRow = findRowAny(bs, 'Activos intangibles', 'Intangible Assets', 'Intangibles');
+  if ((gwRow || intangRow) && totalAssetsRow) {
+    const gw = gwRow ? getLatest(gwRow) : 0;
+    const intang = intangRow ? getLatest(intangRow) : 0;
+    const ta = getLatest(totalAssetsRow);
+    if (ta && ta > 0) {
+      const total = (gw || 0) + (intang || 0);
+      const pct = (total / ta) * 100;
+      bsItems.push(makeItem(
+        'Goodwill + Intangibles / Total Assets',
+        `${pct.toFixed(1)}% ($${total.toFixed(0)}M of $${ta.toFixed(0)}M)`,
+        [],
+        pct < 15 ? 'bull' : pct < 35 ? 'neutral' : 'bear',
+        pct < 10 ? 'Organic Growth' : pct < 15 ? 'Low' : pct < 35 ? 'Acquisition-driven' : 'Impairment Risk',
+        'High goodwill = acquisition risk. Watch for impairment charges'
+      ));
+    }
+  }
+
+  // PP&E
+  const ppeRow = findRowAny(bs, 'Propiedad, planta y equipo', 'Property, Plant', 'PP&E', 'Net PP&E');
+  if (ppeRow && totalAssetsRow) {
+    const ppe = getLatest(ppeRow);
+    const ta = getLatest(totalAssetsRow);
+    if (ppe && ta && ta > 0) {
+      const pct = (ppe / ta) * 100;
+      bsItems.push(makeItem(
+        'PP&E / Total Assets',
+        `${pct.toFixed(1)}%`,
+        getRecentValues(ppeRow, 6),
+        pct < 20 ? 'bull' : pct < 40 ? 'neutral' : 'bear',
+        pct < 15 ? 'Asset-light' : pct < 20 ? 'Low' : pct < 40 ? 'Moderate' : 'Asset Heavy'
+      ));
+    }
+  }
+
+  // Retained Earnings trend
+  const retEarnRow = findRowAny(bs, 'Beneficios retenidos', 'Retained Earnings');
+  if (retEarnRow) {
+    const vals = getRecentValues(retEarnRow, 8);
+    const trend = getTrend(vals);
+    const latest = vals[vals.length - 1];
+    bsItems.push(makeItem(
+      'Retained Earnings',
+      `Latest: $${latest?.toFixed(0)}M — Trend: ${trend}`,
+      vals,
+      trend === 'up' && latest > 0 ? 'bull' : latest > 0 ? 'neutral' : 'bear',
+      latest < 0 ? 'Accumulated Deficit ⚠️' : trend === 'up' ? 'Growing' : 'Flat/Declining',
+      latest < 0 ? 'Negative retained earnings = company has not been profitable historically' : ''
+    ));
+  }
+
+  // Total Equity trend
+  const totalEquityRow = findRowAny(bs, 'Total fondos propios', 'Total Equity', 'Patrimonio neto total');
+  if (totalEquityRow) {
+    const vals = getRecentValues(totalEquityRow, 8);
+    const trend = getTrend(vals);
+    const latest = vals[vals.length - 1];
+    bsItems.push(makeItem(
+      'Total Equity',
+      `Latest: $${latest?.toFixed(0)}M — Trend: ${trend}`,
+      vals,
+      latest > 0 && trend === 'up' ? 'bull' : latest > 0 ? 'neutral' : 'bear',
+      latest < 0 ? 'Negative Equity ⚠️' : trend === 'up' ? 'Growing Book Value' : 'Stable'
+    ));
+  }
+
+  if (bsItems.length) {
+    const bullCount = bsItems.filter(i => i.signal === 'bull').length;
+    const bearCount = bsItems.filter(i => i.signal === 'bear').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 3 ? 'poor' : 'average';
+    results.scores.balance = grade;
+    results.sections.push({ title: 'Balance Sheet Composition', icon: '📊', grade, items: bsItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 6. DEBT & FINANCIAL HEALTH
+  // ══════════════════════════════════════════════════════════
+  const debtItems = [];
+
+  const debtEquityRow = findRowAny(ratios, 'Deuda total / Fondos propios', 'Total Debt/Equity', 'Debt to Equity');
+  if (debtEquityRow) {
+    const vals = getRecentValues(debtEquityRow, 8);
+    const latest = vals[vals.length - 1];
+    debtItems.push(makeItem(
+      'Debt / Equity',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest < 30 ? 'bull' : latest < 80 ? 'neutral' : 'bear',
+      latest < 20 ? 'Near Debt-free' : latest < 30 ? 'Conservative' : latest < 80 ? 'Moderate' : 'Leveraged'
+    ));
+  }
+
+  const netDebtEbitdaRow = findRowAny(ce, 'Deuda Neta / EBITDA');
+  const ndERow2 = findRowAny(ratios, 'Net Debt / EBITDA');
+  const ndeSrc = netDebtEbitdaRow || ndERow2;
+  if (ndeSrc) {
+    const vals = getRecentValues(ndeSrc, 6);
+    const latest = vals[vals.length - 1];
+    debtItems.push(makeItem(
+      'Net Debt / EBITDA',
+      `Latest: ${latest?.toFixed(1)}x`,
+      vals,
+      latest < 0 ? 'bull' : latest < 2 ? 'neutral' : 'bear',
+      latest < 0 ? 'Net Cash Position' : latest < 1 ? 'Very Low Debt' : latest < 2 ? 'Safe' : latest < 3 ? 'Moderate' : 'Highly Leveraged',
+      'Private equity stress threshold is typically 4-5x'
+    ));
+  }
+
+  // Long-term debt
+  const ltDebtRow = findRowAny(bs, 'Deuda a largo plazo', 'Long-Term Debt', 'Long Term Debt');
+  const stDebtRow = findRowAny(bs, 'Deuda a corto plazo', 'Short-Term Debt', 'Short Term Borrowings');
+  if (ltDebtRow) {
+    const ltVals = getRecentValues(ltDebtRow, 6);
+    const trend = getTrend(ltVals);
+    const latest = ltVals[ltVals.length - 1];
+    debtItems.push(makeItem(
+      'Long-Term Debt',
+      `Latest: $${latest?.toFixed(0)}M — Trend: ${trend}`,
+      ltVals,
+      trend === 'down' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+      trend === 'down' ? 'Deleveraging' : trend === 'stable' ? 'Stable' : 'Increasing Debt'
+    ));
+  }
+
+  const currentRatioRow = findRowAny(ratios, 'Ratio de liquidez', 'Current Ratio');
+  if (currentRatioRow) {
+    const vals = getRecentValues(currentRatioRow, 6);
+    const latest = vals[vals.length - 1];
+    debtItems.push(makeItem(
+      'Current Ratio',
+      `Latest: ${latest?.toFixed(2)}x`,
+      vals,
+      latest > 1.5 ? 'bull' : latest > 1.0 ? 'neutral' : 'bear',
+      latest > 2.0 ? 'Very Healthy' : latest > 1.5 ? 'Healthy' : latest > 1.0 ? 'Adequate' : 'Tight Liquidity ⚠️'
+    ));
+  }
+
+  // Quick Ratio
+  const quickRatioRow = findRowAny(ratios, 'Quick Ratio', 'Ratio rápido', 'Acid Test');
+  if (quickRatioRow) {
+    const vals = getRecentValues(quickRatioRow, 6);
+    const latest = vals[vals.length - 1];
+    debtItems.push(makeItem(
+      'Quick Ratio (Acid Test)',
+      `Latest: ${latest?.toFixed(2)}x`,
+      vals,
+      latest > 1.2 ? 'bull' : latest > 0.8 ? 'neutral' : 'bear',
+      latest > 1.5 ? 'Very Liquid' : latest > 1.2 ? 'Healthy' : latest > 0.8 ? 'OK' : 'Low Liquidity ⚠️',
+      'Excludes inventory — more conservative than current ratio'
+    ));
+  }
+
+  const interestCovRow = findRowAny(ratios, 'EBIT / Gastos por intereses', 'Interest Coverage', 'EBIT/Interest');
+  if (interestCovRow) {
+    const vals = getRecentValues(interestCovRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      debtItems.push(makeItem(
+        'Interest Coverage (EBIT / Interest)',
+        `Latest: ${latest?.toFixed(1)}x`,
+        vals,
+        latest > 8 ? 'bull' : latest > 3 ? 'neutral' : 'bear',
+        latest > 15 ? 'Fortress' : latest > 8 ? 'Well Covered' : latest > 3 ? 'OK' : 'Risky ⚠️'
+      ));
+    }
+  }
+
+  const cashAssetsRow = findRowAny(ratios, 'Cash / Assets');
+  if (cashAssetsRow) {
+    const vals = getRecentValues(cashAssetsRow, 6);
+    const latest = vals[vals.length - 1];
+    debtItems.push(makeItem(
+      'Cash / Assets',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 15 ? 'bull' : latest > 5 ? 'neutral' : 'bear',
+      latest > 20 ? 'Cash Rich' : latest > 15 ? 'Healthy' : latest > 5 ? 'OK' : 'Cash Light'
+    ));
+  }
+
+  if (debtItems.length) {
+    const bullCount = debtItems.filter(i => i.signal === 'bull').length;
+    const bearCount = debtItems.filter(i => i.signal === 'bear').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 3 ? 'poor' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.debt = grade;
+    results.sections.push({ title: 'Debt & Financial Health', icon: '🏦', grade, items: debtItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 7. CASH FLOW QUALITY
+  // ══════════════════════════════════════════════════════════
+  const cfItems = [];
+
+  const cfoRow = findRowAny(cf, 'Flujo de caja de las operaciones', 'Cash From Operations', 'Operating Cash Flow');
+  if (cfoRow) {
+    const vals = getRecentValues(cfoRow, 8);
+    const latest = vals[vals.length - 1];
+    const trend = getTrend(vals);
+    const allPositive = vals.every(v => v > 0);
+    cfItems.push(makeItem(
+      'Cash From Operations',
+      `Latest: $${latest?.toFixed(0)}M — Trend: ${trend}`,
+      vals,
+      allPositive && trend !== 'down' ? 'bull' : latest > 0 ? 'neutral' : 'bear',
+      allPositive ? (trend === 'up' ? 'Growing & Consistent' : 'Consistent') : 'Inconsistent ⚠️',
+      allPositive ? 'Positive CFO every year — strong sign' : 'Some negative CFO years — investigate'
+    ));
+  }
+
+  // CFO vs Net Income (Accrual check)
+  if (cfoRow && netIncRow) {
+    const cfoVals = getRecentValues(cfoRow, 6);
+    const niVals = getRecentValues(netIncRow, 6);
+    if (cfoVals.length >= 3 && niVals.length >= 3) {
+      const ratioVals = cfoVals.map((v, i) => niVals[i] && niVals[i] !== 0 ? (v / niVals[i]) * 100 : null).filter(v => v !== null);
+      const avgRatio = avg(ratioVals);
+      cfItems.push(makeItem(
+        'CFO / Net Income (Cash Conversion)',
+        `Average: ${avgRatio?.toFixed(0)}%`,
+        ratioVals,
+        avgRatio > 100 ? 'bull' : avgRatio > 75 ? 'neutral' : 'bear',
+        avgRatio > 120 ? 'Superior Cash Conversion' : avgRatio > 100 ? 'Healthy' : avgRatio > 75 ? 'Moderate' : 'Poor Conversion ⚠️',
+        'CFO should generally exceed Net Income. If not, earnings may include non-cash accruals'
+      ));
+    }
+  }
+
+  const capexRow = findRowAny(cf, 'Gastos de capital', 'Capital Expenditures', 'CapEx');
+  if (capexRow && cfoRow) {
+    const capVals = getRecentValues(capexRow, 6);
+    const cfoVals = getRecentValues(cfoRow, 6);
+    if (capVals.length >= 2 && cfoVals.length >= 2) {
+      const ratioVals = capVals.map((v, i) => cfoVals[i] ? (Math.abs(v) / cfoVals[i]) * 100 : null).filter(v => v !== null);
+      const latestR = ratioVals[ratioVals.length - 1];
+      cfItems.push(makeItem(
+        'Capex / CFO (Reinvestment Rate)',
+        `Latest: ${latestR?.toFixed(0)}%`,
+        ratioVals,
+        latestR < 30 ? 'bull' : latestR < 50 ? 'neutral' : 'bear',
+        latestR < 25 ? 'Low Reinvestment Need' : latestR < 30 ? 'Efficient' : latestR < 50 ? 'Moderate' : 'Heavy Reinvestment',
+        'Lower = more FCF available for shareholders'
+      ));
+    }
+  }
+
+  // Working Capital changes
+  const wcRow = findRowAny(cf, 'Variaciones en el capital circulante', 'Changes in Working Capital');
+  if (wcRow) {
+    const vals = getRecentValues(wcRow, 6);
+    const latest = vals[vals.length - 1];
+    const avgWC = avg(vals);
+    cfItems.push(makeItem(
+      'Working Capital Changes',
+      `Latest: $${latest?.toFixed(0)}M | Avg: $${avgWC?.toFixed(0)}M`,
+      vals,
+      avgWC > 0 ? 'bull' : avgWC > -50 ? 'neutral' : 'bear',
+      avgWC > 0 ? 'Source of Cash' : 'Use of Cash',
+      'Negative working capital changes can indicate growth requiring more capital'
+    ));
+  }
+
+  // Acquisitions
+  const acqRow = findRowAny(cf, 'Adquisiciones', 'Acquisitions');
+  if (acqRow) {
+    const vals = getRecentValues(acqRow, 6);
+    const anyBig = vals.some(v => v !== null && Math.abs(v) > 100);
+    const totalSpent = vals.reduce((s, v) => s + Math.abs(v || 0), 0);
+    if (totalSpent > 0) {
+      cfItems.push(makeItem(
+        'Acquisitions Spending',
+        `Total (${vals.length}Y): $${totalSpent.toFixed(0)}M`,
+        vals.map(v => Math.abs(v || 0)),
+        totalSpent < 50 ? 'bull' : !anyBig ? 'neutral' : 'bear',
+        totalSpent < 50 ? 'Organic Growth' : anyBig ? 'Acquisition-heavy' : 'Selective M&A',
+        'Frequent large acquisitions increase integration risk'
+      ));
+    }
+  }
+
+  // Debt issued vs repaid
+  const debtIssuedRow = findRowAny(cf, 'Deuda emitida', 'Debt Issued', 'Borrowings');
+  const debtRepaidRow = findRowAny(cf, 'Deuda reembolsada', 'Debt Repaid', 'Debt Repayment');
+  if (debtIssuedRow && debtRepaidRow) {
+    const issued = getRecentValues(debtIssuedRow, 6);
+    const repaid = getRecentValues(debtRepaidRow, 6);
+    const netDebtChange = issued.map((v, i) => (v || 0) + (repaid[i] || 0)); // repaid is negative
+    const totalNet = netDebtChange.reduce((s, v) => s + v, 0);
+    cfItems.push(makeItem(
+      'Net Debt Issuance / Repayment',
+      `Net (${issued.length}Y): $${totalNet.toFixed(0)}M`,
+      netDebtChange,
+      totalNet < 0 ? 'bull' : totalNet < 500 ? 'neutral' : 'bear',
+      totalNet < -100 ? 'Net Deleveraging' : totalNet < 0 ? 'Slight Deleveraging' : 'Net Borrower'
+    ));
+  }
+
+  // Net change in cash
+  const netCashChangeRow = findRowAny(cf, 'Variación neta de tesorería', 'Net Change in Cash');
+  if (netCashChangeRow) {
+    const vals = getRecentValues(netCashChangeRow, 6);
+    const positiveYears = vals.filter(v => v > 0).length;
+    cfItems.push(makeItem(
+      'Net Change in Cash',
+      `Positive in ${positiveYears}/${vals.length} years`,
+      vals,
+      positiveYears >= vals.length * 0.6 ? 'bull' : positiveYears >= vals.length * 0.4 ? 'neutral' : 'bear',
+      positiveYears >= vals.length * 0.6 ? 'Cash Accumulating' : 'Cash Volatile'
+    ));
+  }
+
+  if (cfItems.length) {
+    const bullCount = cfItems.filter(i => i.signal === 'bull').length;
+    const bearCount = cfItems.filter(i => i.signal === 'bear').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 3 ? 'poor' : 'average';
+    results.scores.cashflow = grade;
+    results.sections.push({ title: 'Cash Flow Quality', icon: '💸', grade, items: cfItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 8. EFFICIENCY & OPERATIONS
+  // ══════════════════════════════════════════════════════════
+  const effItems = [];
+
+  const assetTurnRow = findRowAny(ratios, 'Rotación de activos', 'Asset Turnover');
+  if (assetTurnRow) {
+    const vals = getRecentValues(assetTurnRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Asset Turnover',
+        `Latest: ${latest?.toFixed(2)}x`,
+        vals,
+        latest > 0.8 ? 'bull' : latest > 0.4 ? 'neutral' : 'bear',
+        latest > 1.0 ? 'Very Efficient' : latest > 0.8 ? 'Efficient' : latest > 0.4 ? 'Average' : 'Capital Heavy'
+      ));
+    }
+  }
+
+  const recTurnRow = findRowAny(ratios, 'Receivables Turnover', 'Rotación de cuentas por cobrar');
+  if (recTurnRow) {
+    const vals = getRecentValues(recTurnRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Receivables Turnover',
+        `Latest: ${latest?.toFixed(1)}x`,
+        vals,
+        latest > 8 ? 'bull' : latest > 5 ? 'neutral' : 'bear',
+        latest > 10 ? 'Excellent Collection' : latest > 8 ? 'Good' : latest > 5 ? 'Average' : 'Slow Collection',
+        `≈ ${(365 / latest).toFixed(0)} days to collect`
+      ));
+    }
+  }
+
+  const invTurnRow = findRowAny(ratios, 'Inventory Turnover', 'Rotación de inventario');
+  if (invTurnRow) {
+    const vals = getRecentValues(invTurnRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Inventory Turnover',
+        `Latest: ${latest?.toFixed(1)}x`,
+        vals,
+        latest > 8 ? 'bull' : latest > 4 ? 'neutral' : 'bear',
+        latest > 10 ? 'Very Lean' : latest > 8 ? 'Efficient' : latest > 4 ? 'Normal' : 'Slow Moving',
+        `≈ ${(365 / latest).toFixed(0)} days inventory on hand`
+      ));
+    }
+  }
+
+  // Cash Conversion Cycle
+  const cccRow = findRowAny(ratios, 'Cash Conversion Cycle', 'Ciclo de conversión');
+  if (cccRow) {
+    const vals = getRecentValues(cccRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Cash Conversion Cycle',
+        `Latest: ${latest?.toFixed(0)} days`,
+        vals,
+        latest < 30 ? 'bull' : latest < 60 ? 'neutral' : 'bear',
+        latest < 0 ? 'Negative CCC (Uses supplier float!)' : latest < 30 ? 'Efficient' : latest < 60 ? 'Normal' : 'Long Cycle',
+        'Negative CCC = the business generates cash before paying suppliers (very powerful)'
+      ));
+    }
+  }
+
+  const dsoRow = findRowAny(ratios, 'Días de ventas pendientes', 'Days Sales Outstanding', 'DSO');
+  if (dsoRow) {
+    const vals = getRecentValues(dsoRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Days Sales Outstanding (DSO)',
+        `Latest: ${latest?.toFixed(0)} days`,
+        vals,
+        latest < 45 ? 'bull' : latest < 75 ? 'neutral' : 'bear',
+        latest < 30 ? 'Excellent' : latest < 45 ? 'Quick Collection' : latest < 75 ? 'Normal' : 'Slow'
+      ));
+    }
+  }
+
+  const salesEmpRow = findRowAny(ratios, 'Sales Per Employee', 'Revenue Per Employee');
+  if (salesEmpRow) {
+    const vals = getRecentValues(salesEmpRow, 6);
+    const latest = vals[vals.length - 1];
+    const trend = getTrend(vals);
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'Revenue Per Employee',
+        `Latest: $${(latest/1000).toFixed(0)}K — Trend: ${trend}`,
+        vals,
+        trend === 'up' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+        trend === 'up' ? 'Scaling Well' : trend === 'stable' ? 'Flat' : 'Declining'
+      ));
+    }
+  }
+
+  const fcfCfoRow = findRowAny(ratios, 'FCF / CFO');
+  if (fcfCfoRow) {
+    const vals = getRecentValues(fcfCfoRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      effItems.push(makeItem(
+        'FCF / CFO (Capital Efficiency)',
+        `Latest: ${latest?.toFixed(1)}%`,
+        vals,
+        latest > 85 ? 'bull' : latest > 70 ? 'neutral' : 'bear',
+        latest > 90 ? 'Ultra Efficient' : latest > 85 ? 'Low Capex Need' : latest > 70 ? 'OK' : 'Capex Heavy'
+      ));
+    }
+  }
+
+  if (effItems.length) {
+    const bullCount = effItems.filter(i => i.signal === 'bull').length;
+    const grade = bullCount >= 3 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.efficiency = grade;
+    results.sections.push({ title: 'Efficiency & Operations', icon: '⚙️', grade, items: effItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 9. VALUATION (EXPANDED)
+  // ══════════════════════════════════════════════════════════
+  const valItems = [];
+
+  // Market Cap & EV
+  const mcRow = findRowAny(vm, 'Capitalización bursátil', 'Market Cap');
+  const evRow = findRowAny(vm, 'Valor total de la empresa', 'Total Enterprise Value', 'Enterprise Value');
+  if (mcRow && evRow) {
+    const mc = getLatest(mcRow);
+    const ev = getLatest(evRow);
+    if (mc && ev) {
+      const evPremium = ((ev / mc) - 1) * 100;
+      valItems.push(makeItem(
+        'Enterprise Value vs Market Cap',
+        `MC: $${(mc/1000).toFixed(1)}B | EV: $${(ev/1000).toFixed(1)}B (${evPremium > 0 ? '+' : ''}${evPremium.toFixed(0)}%)`,
+        [],
+        evPremium < 5 ? 'bull' : evPremium < 20 ? 'neutral' : 'bear',
+        evPremium < 0 ? 'Net Cash (EV < MC)' : evPremium < 5 ? 'Minimal Debt' : evPremium < 20 ? 'Some Debt' : 'Debt-heavy EV',
+        'EV > MC by a large margin = significant net debt'
+      ));
+    }
+  }
+
+  const peRow = findRowAny(vm, 'NTM Price / Normalized Earnings', 'NTM P/E', 'Forward P/E');
+  if (peRow) {
+    const vals = getRecentValues(peRow, 8);
+    const latest = vals[vals.length - 1];
+    const avgPE = avg(vals);
+    const belowAvg = latest < avgPE;
+    valItems.push(makeItem(
+      'Forward P/E (NTM)',
+      `Latest: ${latest?.toFixed(1)}x | Hist Avg: ${avgPE?.toFixed(1)}x`,
+      vals,
+      latest < 18 ? 'bull' : latest < 30 ? 'neutral' : 'bear',
+      latest < 15 ? 'Deep Value' : latest < 18 ? 'Cheap' : latest < 30 ? 'Fair' : 'Expensive',
+      belowAvg ? '📉 Below historical average — potentially attractive' : '📈 Above historical average'
+    ));
+  }
+
+  // P/S
+  const psRow = findRowAny(vm, 'Price / Sales', 'NTM Price / Revenue', 'P/S');
+  if (psRow) {
+    const vals = getRecentValues(psRow, 8);
+    const latest = vals[vals.length - 1];
+    valItems.push(makeItem(
+      'Price / Sales',
+      `Latest: ${latest?.toFixed(1)}x`,
+      vals,
+      latest < 3 ? 'bull' : latest < 8 ? 'neutral' : 'bear',
+      latest < 2 ? 'Deep Value' : latest < 3 ? 'Reasonable' : latest < 8 ? 'Growth Premium' : 'Very Rich'
+    ));
+  }
+
+  // P/B
+  const pbRow = findRowAny(vm, 'Price / Book', 'P/B', 'Price/Book');
+  if (pbRow) {
+    const vals = getRecentValues(pbRow, 8);
+    const latest = vals[vals.length - 1];
+    valItems.push(makeItem(
+      'Price / Book Value',
+      `Latest: ${latest?.toFixed(1)}x`,
+      vals,
+      latest < 3 ? 'bull' : latest < 8 ? 'neutral' : 'bear',
+      latest < 1.5 ? 'Below Book' : latest < 3 ? 'Reasonable' : latest < 8 ? 'Premium' : 'Very Rich',
+      latest < 1 ? 'Trading below book value — potential deep value or value trap' : ''
+    ));
+  }
+
+  const evEbitdaRow = findRowAny(vm, 'NTM Total Enterprise Value / EBITDA', 'EV/EBITDA');
+  if (evEbitdaRow) {
+    const vals = getRecentValues(evEbitdaRow, 8);
+    const latest = vals[vals.length - 1];
+    const avgVal = avg(vals);
+    valItems.push(makeItem(
+      'EV/EBITDA (NTM)',
+      `Latest: ${latest?.toFixed(1)}x | Hist Avg: ${avgVal?.toFixed(1)}x`,
+      vals,
+      latest < 12 ? 'bull' : latest < 20 ? 'neutral' : 'bear',
+      latest < 10 ? 'Cheap' : latest < 12 ? 'Attractive' : latest < 20 ? 'Fair' : 'Rich'
+    ));
+  }
+
+  // EV/EBIT
+  const evEbitRow = findRowAny(vm, 'Enterprise Value / EBIT', 'EV/EBIT', 'TEV / EBIT');
+  if (evEbitRow) {
+    const vals = getRecentValues(evEbitRow, 8);
+    const latest = vals[vals.length - 1];
+    valItems.push(makeItem(
+      'EV/EBIT',
+      `Latest: ${latest?.toFixed(1)}x`,
+      vals,
+      latest < 15 ? 'bull' : latest < 25 ? 'neutral' : 'bear',
+      latest < 12 ? 'Cheap' : latest < 15 ? 'Attractive' : latest < 25 ? 'Fair' : 'Expensive'
+    ));
+  }
+
+  // Price / FCF
+  const pfcfRow = findRowAny(vm, 'Price / Free Cash Flow', 'P/FCF');
+  if (pfcfRow) {
+    const vals = getRecentValues(pfcfRow, 8);
+    const latest = vals[vals.length - 1];
+    valItems.push(makeItem(
+      'Price / Free Cash Flow',
+      `Latest: ${latest?.toFixed(1)}x`,
+      vals,
+      latest < 20 ? 'bull' : latest < 35 ? 'neutral' : 'bear',
+      latest < 15 ? 'Cheap' : latest < 20 ? 'Attractive' : latest < 35 ? 'Fair' : 'Expensive'
+    ));
+  }
+
+  const fcfYieldRow = findRowAny(vm, 'Levered Free Cash Flow Yield', 'FCF Yield');
+  if (fcfYieldRow) {
+    const vals = getRecentValues(fcfYieldRow, 8);
+    const latest = vals[vals.length - 1];
+    valItems.push(makeItem(
+      'FCF Yield (NTM)',
+      `Latest: ${latest?.toFixed(1)}%`,
+      vals,
+      latest > 5 ? 'bull' : latest > 3 ? 'neutral' : 'bear',
+      latest > 7 ? 'Very Attractive' : latest > 5 ? 'Good Value' : latest > 3 ? 'Fair' : 'Low Yield'
+    ));
+  }
+
+  // Dividend Yield
+  const divYieldRow = findRowAny(vm, 'Dividend Yield', 'Rentabilidad por dividendo');
+  if (divYieldRow) {
+    const vals = getRecentValues(divYieldRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null && latest > 0) {
+      valItems.push(makeItem(
+        'Dividend Yield',
+        `Latest: ${latest.toFixed(2)}%`,
+        vals,
+        latest > 2 ? 'bull' : latest > 0.5 ? 'neutral' : 'neutral',
+        latest > 3 ? 'High Yield' : latest > 2 ? 'Good Yield' : latest > 0.5 ? 'Modest' : 'Token Dividend'
+      ));
+    }
+  }
+
+  const pegRow = findRowAny(ratios, 'PEG Ratio', 'PEG');
+  if (pegRow) {
+    const vals = getRecentValues(pegRow, 4);
+    const latest = vals[vals.length - 1];
+    if (latest !== null) {
+      valItems.push(makeItem(
+        'PEG Ratio',
+        `Latest: ${latest?.toFixed(2)}x`,
+        vals,
+        latest < 1 ? 'bull' : latest < 2 ? 'neutral' : 'bear',
+        latest < 0.8 ? 'Very Undervalued' : latest < 1 ? 'Undervalued' : latest < 2 ? 'Fair' : 'Overvalued',
+        'P/E divided by EPS growth rate. <1 = growth at a reasonable price'
+      ));
+    }
+  }
+
+  if (valItems.length) {
+    const bullCount = valItems.filter(i => i.signal === 'bull').length;
+    const bearCount = valItems.filter(i => i.signal === 'bear').length;
+    const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 4 ? 'poor' : 'average';
+    results.scores.valuation = grade;
+    results.sections.push({ title: 'Valuation', icon: '🏷️', grade, items: valItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 10. DIVIDEND & SHAREHOLDER RETURNS
+  // ══════════════════════════════════════════════════════════
+  const shItems = [];
+
+  // Dividends Per Share
+  const dpsRow = findRowAny(is, 'Dividendos por acción', 'Dividends Per Share', 'DPS');
+  if (dpsRow) {
+    const vals = getRecentValues(dpsRow, 8);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    if (latest !== null && latest > 0) {
+      const gr = cagr(first, latest, vals.length - 1);
+      const neverCut = vals.every((v, i) => i === 0 || v >= vals[i-1]);
+      shItems.push(makeItem(
+        'Dividends Per Share',
+        `$${latest.toFixed(2)} | ${gr !== null ? `CAGR: ${gr.toFixed(1)}%` : ''}`,
+        vals,
+        neverCut ? 'bull' : latest > first ? 'neutral' : 'bear',
+        neverCut ? 'Never Cut — Reliable' : latest > first ? 'Growing' : 'Volatile/Cut',
+        neverCut ? '✓ Dividend has never been cut in available history' : ''
+      ));
+    }
+  }
+
+  // Payout Ratio
+  const payoutRow = findRowAny(is, 'Payout Ratio', 'Ratio de reparto');
+  if (payoutRow) {
+    const vals = getRecentValues(payoutRow, 6);
+    const latest = vals[vals.length - 1];
+    if (latest !== null && latest > 0) {
+      shItems.push(makeItem(
+        'Payout Ratio',
+        `Latest: ${latest.toFixed(0)}%`,
+        vals,
+        latest < 50 ? 'bull' : latest < 75 ? 'neutral' : 'bear',
+        latest < 40 ? 'Very Safe' : latest < 50 ? 'Safe' : latest < 75 ? 'Moderate' : 'High — Risk of Cut',
+        'Payout >80% of earnings leaves little room for growth or downturns'
+      ));
+    }
+  }
+
+  // Dividends Paid (absolute)
+  const divPaidRow = findRowAny(cf, 'Dividendos pagados', 'Dividends Paid');
+  if (divPaidRow) {
+    const vals = getRecentValues(divPaidRow, 6);
+    const latest = Math.abs(vals[vals.length - 1] || 0);
+    const trend = getTrend(vals.map(v => Math.abs(v || 0)));
+    if (latest > 0) {
+      shItems.push(makeItem(
+        'Total Dividends Paid',
+        `Latest: $${latest.toFixed(0)}M — Trend: ${trend}`,
+        vals.map(v => Math.abs(v || 0)),
+        trend === 'up' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+        trend === 'up' ? 'Growing Distributions' : trend === 'stable' ? 'Steady' : 'Declining'
+      ));
+    }
+  }
+
+  // Share Buybacks
+  const buybackRow = findRowAny(cf, 'Recompra de acciones comunes', 'Common Stock Repurchased', 'Share Buybacks');
+  if (buybackRow) {
+    const vals = getRecentValues(buybackRow, 6);
+    const hasSignificant = vals.some(v => v !== null && Math.abs(v) > 10);
+    const total = vals.reduce((s, v) => s + Math.abs(v || 0), 0);
+    shItems.push(makeItem(
+      'Share Buybacks',
+      hasSignificant ? `Total (${vals.length}Y): $${total.toFixed(0)}M` : 'Minimal/None',
+      vals.map(v => Math.abs(v || 0)),
+      hasSignificant ? 'bull' : 'neutral',
+      hasSignificant ? 'Active Buybacks' : 'No Buybacks',
+      hasSignificant ? 'Buybacks reduce share count and boost EPS' : ''
+    ));
+  }
+
+  // Share Issuance (dilution check)
+  const shareIssRow = findRowAny(cf, 'Emisión de acciones', 'Share Issuance', 'Common Stock Issued');
+  if (shareIssRow) {
+    const vals = getRecentValues(shareIssRow, 6);
+    const totalIssued = vals.reduce((s, v) => s + (v || 0), 0);
+    if (totalIssued > 50) {
+      shItems.push(makeItem(
+        'Share Issuance (Dilution)',
+        `Total (${vals.length}Y): $${totalIssued.toFixed(0)}M issued`,
+        vals,
+        totalIssued < 50 ? 'bull' : totalIssued < 200 ? 'neutral' : 'bear',
+        totalIssued < 50 ? 'Minimal' : totalIssued < 200 ? 'Some Dilution' : 'Heavy Dilution ⚠️'
+      ));
+    }
+  }
+
+  // Diluted Shares Outstanding trend
+  const sharesRow = findRowAny(is, 'Promedio ponderado de acciones diluidas', 'Diluted Shares', 'Weighted Average Diluted');
+  if (sharesRow) {
+    const vals = getRecentValues(sharesRow, 10);
+    const latest = vals[vals.length - 1];
+    const first = vals[0];
+    const shrinking = latest < first;
+    const changePct = first ? ((latest - first) / first) * 100 : 0;
+    shItems.push(makeItem(
+      'Diluted Shares Outstanding',
+      `${first?.toFixed(1)}M → ${latest?.toFixed(1)}M (${changePct > 0 ? '+' : ''}${changePct.toFixed(1)}%)`,
+      vals,
+      shrinking ? 'bull' : Math.abs(changePct) < 3 ? 'neutral' : 'bear',
+      shrinking ? 'Shrinking ✓' : Math.abs(changePct) < 3 ? 'Stable' : 'Diluting ⚠️',
+      shrinking ? 'Fewer shares = more value per share for existing holders' : ''
+    ));
+  }
+
+  // Total shareholder yield = buybacks + dividends / market cap
+  if ((buybackRow || divPaidRow) && mcRow) {
+    const mc = getLatest(mcRow);
+    const bb = buybackRow ? Math.abs(getLatest(buybackRow) || 0) : 0;
+    const div = divPaidRow ? Math.abs(getLatest(divPaidRow) || 0) : 0;
+    if (mc && mc > 0) {
+      const totalYield = ((bb + div) / mc) * 100;
+      if (totalYield > 0.5) {
+        shItems.push(makeItem(
+          'Total Shareholder Yield',
+          `${totalYield.toFixed(1)}% (Buybacks: $${bb.toFixed(0)}M + Dividends: $${div.toFixed(0)}M)`,
+          [],
+          totalYield > 5 ? 'bull' : totalYield > 2 ? 'neutral' : 'neutral',
+          totalYield > 5 ? 'Excellent Capital Return' : totalYield > 2 ? 'Good' : 'Modest',
+          'Buybacks + dividends as % of market cap'
+        ));
+      }
+    }
+  }
+
+  if (shItems.length) {
+    const bullCount = shItems.filter(i => i.signal === 'bull').length;
+    const grade = bullCount >= 3 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
+    results.scores.shareholder = grade;
+    results.sections.push({ title: 'Dividends & Shareholder Returns', icon: '🎯', grade, items: shItems });
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 11. CONSENSUS ESTIMATES (Forward-looking)
+  // ══════════════════════════════════════════════════════════
+  if (ce) {
+    const estItems = [];
+
+    const ceRevRow = findRowAny(ce, 'Ingresos', 'Revenue');
+    if (ceRevRow && revenueRow) {
+      const estVals = getRecentValues(ceRevRow, 4);
+      const histLatest = getLatest(revenueRow);
+      const fwdLatest = estVals[estVals.length - 1];
+      if (histLatest && fwdLatest) {
+        const impliedGrowth = ((fwdLatest / histLatest) - 1) * 100;
+        estItems.push(makeItem(
+          'Consensus Revenue Estimate',
+          `Fwd: $${fwdLatest.toFixed(0)}M (${impliedGrowth > 0 ? '+' : ''}${impliedGrowth.toFixed(1)}% vs last reported)`,
+          estVals,
+          impliedGrowth > 10 ? 'bull' : impliedGrowth > 3 ? 'neutral' : 'bear',
+          impliedGrowth > 10 ? 'Strong Growth Expected' : impliedGrowth > 3 ? 'Moderate' : 'Slow/Declining'
+        ));
+      }
+    }
+
+    const ceEPSRow = findRowAny(ce, 'BPA', 'EPS', 'Earnings Per Share');
+    if (ceEPSRow) {
+      const vals = getRecentValues(ceEPSRow, 4);
+      const trend = getTrend(vals);
+      const latest = vals[vals.length - 1];
+      estItems.push(makeItem(
+        'Consensus EPS Estimate',
+        `Forward: $${latest?.toFixed(2)} — Trend: ${trend}`,
+        vals,
+        trend === 'up' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+        trend === 'up' ? 'Estimates Rising' : trend === 'stable' ? 'Stable' : 'Estimates Falling'
+      ));
+    }
+
+    const ceEBITDARow = findRowAny(ce, 'EBITDA');
+    if (ceEBITDARow) {
+      const vals = getRecentValues(ceEBITDARow, 4);
+      const trend = getTrend(vals);
+      estItems.push(makeItem(
+        'Consensus EBITDA Estimate',
+        `Forward: $${vals[vals.length - 1]?.toFixed(0)}M — Trend: ${trend}`,
+        vals,
+        trend === 'up' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+        trend === 'up' ? 'Growing' : 'Flat/Declining'
+      ));
+    }
+
+    const ceFCFRow = findRowAny(ce, 'Free Cash Flow', 'FCF');
+    if (ceFCFRow) {
+      const vals = getRecentValues(ceFCFRow, 4);
+      const trend = getTrend(vals);
+      estItems.push(makeItem(
+        'Consensus FCF Estimate',
+        `Forward: $${vals[vals.length - 1]?.toFixed(0)}M — Trend: ${trend}`,
+        vals,
+        trend === 'up' ? 'bull' : trend === 'stable' ? 'neutral' : 'bear',
+        trend === 'up' ? 'Improving' : 'Stable/Declining'
+      ));
+    }
+
+    if (estItems.length) {
+      results.sections.push({ title: 'Consensus Estimates', icon: '🔭', grade: 'info', items: estItems });
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 12. ANALYST SENTIMENT
+  // ══════════════════════════════════════════════════════════
+  if (apt) {
+    const analystItems = [];
+    const targetRow = findRowAny(apt, 'Media del precio objetivo', 'Average Price Target');
+    const priceRow = findRowAny(apt, 'Precio de cierre', 'Close Price');
+    if (targetRow && priceRow) {
+      const target = getLatest(targetRow);
+      const price = getLatest(priceRow);
+      if (target && price) {
+        const upside = ((target / price) - 1) * 100;
+        analystItems.push(makeItem(
+          'Avg Price Target vs Current',
+          `Target: $${target.toFixed(0)} vs $${price.toFixed(0)} (${upside > 0 ? '+' : ''}${upside.toFixed(1)}%)`,
+          getRecentValues(targetRow, 6),
+          upside > 15 ? 'bull' : upside > -5 ? 'neutral' : 'bear',
+          upside > 15 ? 'Significant Upside' : upside > 0 ? 'Modest Upside' : 'Downside'
+        ));
+      }
+    }
+
+    // High vs Low targets
+    const highRow = findRowAny(apt, 'Precio objetivo alto', 'High Price Target');
+    const lowRow = findRowAny(apt, 'Precio objetivo bajo', 'Low Price Target');
+    if (highRow && lowRow) {
+      const high = getLatest(highRow);
+      const low = getLatest(lowRow);
+      if (high && low) {
+        const spread = ((high - low) / low) * 100;
+        analystItems.push(makeItem(
+          'Target Range (High/Low)',
+          `$${low.toFixed(0)} — $${high.toFixed(0)} (${spread.toFixed(0)}% spread)`,
+          [],
+          spread < 50 ? 'bull' : spread < 100 ? 'neutral' : 'bear',
+          spread < 50 ? 'High Consensus' : spread < 100 ? 'Moderate Spread' : 'Wide Disagreement'
+        ));
+      }
+    }
+
+    const buyRow = findRowAny(apt, 'de comprar', 'Buy Rating');
+    const holdRow = findRowAny(apt, 'de mantener', 'Hold Rating');
+    const sellRow = findRowAny(apt, 'de vender', 'Sell Rating');
+    if (buyRow || holdRow || sellRow) {
+      const buys = getLatest(buyRow) || 0;
+      const holds = getLatest(holdRow) || 0;
+      const sells = getLatest(sellRow) || 0;
+      const total = buys + holds + sells;
+      analystItems.push(makeItem(
+        'Analyst Consensus',
+        `Buy: ${buys} | Hold: ${holds} | Sell: ${sells} (${total} analysts)`,
+        [buys, holds, sells],
+        buys > holds + sells ? 'bull' : sells > buys ? 'bear' : 'neutral',
+        buys > holds + sells ? 'Majority Buy' : sells > buys ? 'Caution' : 'Mixed'
+      ));
+    }
+
+    if (analystItems.length) {
+      results.sections.push({ title: 'Analyst Sentiment', icon: '🔮', grade: 'info', items: analystItems });
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // OVERALL SCORE
+  // ══════════════════════════════════════════════════════════
+  const gradeValues = { excellent: 4, good: 3, average: 2, poor: 1 };
+  const scoreKeys = Object.keys(results.scores);
+  const validScores = scoreKeys.map(k => gradeValues[results.scores[k]]).filter(v => v);
+  if (validScores.length) {
+    const avgScore = validScores.reduce((a, b) => a + b, 0) / validScores.length;
+    results.overall = avgScore >= 3.5 ? 'excellent' : avgScore >= 2.5 ? 'good' : avgScore >= 1.5 ? 'average' : 'poor';
+    results.overallScore = avgScore;
+  }
+
+  // Count total metrics
+  results.totalMetrics = results.sections.reduce((s, sec) => s + sec.items.length, 0);
+
+  return results;
+}
+
+// =========================================================
+// RENDERER
+// =========================================================
+function gradeLabel(g) {
+  return { excellent: 'Excellent', good: 'Good', average: 'Average', poor: 'Poor', info: 'Info' }[g] || g;
+}
+function gradeBadgeClass(g) {
+  return { excellent: 'badge-green', good: 'badge-blue', average: 'badge-yellow', poor: 'badge-red', info: 'badge-purple' }[g] || 'badge-blue';
+}
+function gradeEmoji(g) {
+  return { excellent: '🟢', good: '🔵', average: '🟡', poor: '🔴' }[g] || '⚪';
+}
+
+function renderTrendBars(values) {
+  if (!values || values.length < 2) return '';
+  const max = Math.max(...values.map(v => Math.abs(v || 0)), 1);
+  return `<div class="trend-bar">${values.map(v => {
+    const h = Math.max(2, (Math.abs(v || 0) / max) * 30);
+    const cls = v > 0 ? 'bar-pos' : v < 0 ? 'bar-neg' : 'bar-zero';
+    return `<div class="bar ${cls}" style="height:${h}px" title="${v?.toFixed?.(1) ?? ''}"></div>`;
+  }).join('')}</div>`;
+}
+
+function renderDashboard(data, results) {
+  const d = document.getElementById('dashboard');
+  const overallLabel = gradeLabel(results.overall || 'average');
+  const overallColor = { excellent: 'var(--green)', good: 'var(--accent)', average: 'var(--yellow)', poor: 'var(--red)' }[results.overall] || 'var(--text-dim)';
+
+  let html = `
+    <div class="dash-header fade-up">
+      <div>
+        <h2>${data.ticker ? data.ticker + ' — ' : ''}${data.company}</h2>
+        <span class="price">${data.price || ''} ${data.period ? '• ' + data.period : ''} • ${results.totalMetrics} metrics analyzed</span>
+      </div>
+      <button class="btn-back" onclick="goBack()">← New Analysis</button>
+    </div>
+  `;
+
+  // Score cards
+  const cards = [
+    { label: 'Overall Health', value: overallLabel, grade: results.overall, detail: `Score: ${results.overallScore?.toFixed(1)}/4.0` },
+    ...Object.entries(results.scores).map(([k, g]) => ({
+      label: k.charAt(0).toUpperCase() + k.slice(1),
+      value: gradeEmoji(g) + ' ' + gradeLabel(g),
+      grade: g,
+      detail: ''
+    }))
+  ];
+
+  html += `<div class="score-row">`;
+  cards.forEach((c, i) => {
+    html += `<div class="score-card ${c.grade} fade-up delay-${Math.min(i+1, 6)}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.detail ? `<div class="detail">${c.detail}</div>` : ''}
+    </div>`;
+  });
+  html += `</div>`;
+
+  // Sections
+  results.sections.forEach((sec, si) => {
+    const badgeCls = gradeBadgeClass(sec.grade);
+    html += `
+    <div class="section fade-up delay-${Math.min(si+2, 6)}">
+      <div class="section-head${si < 4 ? ' open' : ''}" onclick="this.classList.toggle('open')">
+        <span style="font-size:1.2rem">${sec.icon}</span>
+        <h3>${sec.title}</h3>
+        <span class="metric-count">${sec.items.length} metrics</span>
+        <span class="badge ${badgeCls}">${gradeLabel(sec.grade)}</span>
+        <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="section-body">
+        <div class="analysis-grid">
+    `;
+    sec.items.forEach(item => {
+      const sigCls = item.signal === 'bull' ? 'signal-bull' : item.signal === 'bear' ? 'signal-bear' : item.signal === 'info' ? 'signal-info' : 'signal-neutral';
+      const dotCls = item.signal === 'bull' ? 'dot-green' : item.signal === 'bear' ? 'dot-red' : item.signal === 'info' ? 'dot-blue' : 'dot-yellow';
+      html += `
+        <div class="a-item">
+          <div>
+            <div class="metric-name">${item.name}</div>
+            <div class="metric-detail">${item.detail || ''}</div>
+            ${item.explanation ? `<div class="metric-values">${item.explanation}</div>` : ''}
+            ${renderTrendBars(item.values)}
+          </div>
+          <div class="signal ${sigCls}">
+            <span class="dot ${dotCls}"></span>
+            ${item.signalText}
+          </div>
+        </div>
+      `;
+    });
+    html += `</div></div></div>`;
+  });
+
+  // Summary
+  html += buildSummary(data, results);
+  d.innerHTML = html;
+}
+
+function buildSummary(data, results) {
+  const strengths = [];
+  const risks = [];
+  const neutrals = [];
+  results.sections.forEach(sec => {
+    sec.items.forEach(item => {
+      if (item.signal === 'bull') strengths.push(item.name + ': ' + item.signalText);
+      if (item.signal === 'bear') risks.push(item.name + ': ' + item.signalText);
+    });
+  });
+
+  // Investment thesis summary
+  const bullPct = results.totalMetrics > 0 ? (strengths.length / results.totalMetrics * 100).toFixed(0) : 0;
+  const bearPct = results.totalMetrics > 0 ? (risks.length / results.totalMetrics * 100).toFixed(0) : 0;
+
+  return `
+  <div class="summary-box fade-up delay-6">
+    <h4>📋 Analysis Summary — ${data.ticker || data.company}</h4>
+    <p style="margin-bottom:.75rem;font-size:.82rem;">
+      <span style="color:var(--green)">${strengths.length} bullish</span> · 
+      <span style="color:var(--yellow)">${results.totalMetrics - strengths.length - risks.length} neutral</span> · 
+      <span style="color:var(--red)">${risks.length} bearish</span> signals out of ${results.totalMetrics} metrics
+    </p>
+    <p>
+      <strong style="color:var(--green)">Strengths (${bullPct}%):</strong>
+      ${strengths.length ? strengths.slice(0, 12).join(' · ') + (strengths.length > 12 ? ` · +${strengths.length - 12} more` : '') : 'None identified from available data.'}
+    </p>
+    <p style="margin-top:.5rem">
+      <strong style="color:var(--red)">Risks / Watch (${bearPct}%):</strong>
+      ${risks.length ? risks.slice(0, 12).join(' · ') + (risks.length > 12 ? ` · +${risks.length - 12} more` : '') : 'No significant red flags detected.'}
+    </p>
+    <p style="margin-top:.75rem;font-size:.78rem;color:var(--text-dim)">
+      ⚠️ This is an automated screening tool, not financial advice. Always do your own due diligence.
+    </p>
+  </div>`;
+}
+
+// =========================================================
+// MAIN
+// =========================================================
+function analyzeData() {
+  const raw = document.getElementById('dataInput').value.trim();
+  const errEl = document.getElementById('error-msg');
+  errEl.style.display = 'none';
+
+  if (!raw || raw.length < 100) {
+    errEl.textContent = 'Please paste the full TIKR financial data (it seems too short).';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const data = parseTIKR(raw);
+    if (Object.keys(data.sections).length === 0) {
+      errEl.textContent = 'Could not detect any financial sections. Make sure you pasted the full TIKR data.';
+      errEl.style.display = 'block';
+      return;
+    }
+    const results = analyze(data);
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    renderDashboard(data, results);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    errEl.textContent = 'Error parsing data: ' + e.message;
+    errEl.style.display = 'block';
+    console.error(e);
+  }
+}
+
+function goBack() {
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('landing').style.display = 'flex';
+}
+</script>
+</body>
+</html>
