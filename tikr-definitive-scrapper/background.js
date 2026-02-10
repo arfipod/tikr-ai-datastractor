@@ -81,6 +81,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return false;
     }
 
+    // ── NEW: Download chart data as CSV ──
+    if (msg?.type === "DOWNLOAD_CSV") {
+      if (!tabId) throw new Error("DOWNLOAD_CSV without tabId");
+      const cmd = {
+        type:  "DOWNLOAD_CSV_CMD",
+        runId: msg.runId || null,
+      };
+      pendingByTabId.set(tabId, cmd);
+      log("pending set", { tabId, pendingType: cmd.type, runId: cmd.runId });
+      injectAll(tabId, cmd.runId);
+      sendResponse?.({ ok: true });
+      return false;
+    }
+
     // ── NEW: Add all table rows to chart ──
     if (msg?.type === "TABLE_ADD_ALL") {
       if (!tabId) throw new Error("TABLE_ADD_ALL without tabId");
@@ -121,7 +135,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       msg?.type === "MD_RESULT"            ||
       msg?.type === "SCRAPE_PROGRESS"      ||
       msg?.type === "SCRAPE_DONE"          ||
-      msg?.type === "TABLE_ADD_ALL_RESULT"
+      msg?.type === "TABLE_ADD_ALL_RESULT" ||
+      msg?.type === "DOWNLOAD_CSV_RESULT"
     ) {
       chrome.runtime.sendMessage(msg).catch((e) => {
         // Si el panel está cerrado, no pasa nada

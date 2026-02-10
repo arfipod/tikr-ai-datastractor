@@ -172,6 +172,13 @@
         return false;
       }
 
+      if (msg?.type === "DOWNLOAD_CSV_CMD") {
+        log("forwarding DOWNLOAD_CSV_CMD to MAIN", { runId: msg.runId });
+        document.dispatchEvent(new CustomEvent("__tikr_to_main", { detail: JSON.stringify(msg) }));
+        sendResponse?.({ ok: true });
+        return false;
+      }
+
       sendResponse?.({ ok: true, ignored: true });
       return false;
 

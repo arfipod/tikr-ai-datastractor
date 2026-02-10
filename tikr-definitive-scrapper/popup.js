@@ -107,6 +107,21 @@ document.getElementById("tableAddAll").addEventListener("click", async () => {
   });
 });
 
+// Chart Tools: Download CSV
+document.getElementById("downloadCSV").addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+
+  const runId = "csv-" + Date.now();
+  document.getElementById("chartStatus").textContent = "Generating CSV…";
+
+  chrome.runtime.sendMessage({
+    type:  "DOWNLOAD_CSV",
+    tabId: tab.id,
+    runId,
+  });
+});
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg?.type) return;
 
@@ -137,6 +152,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     } else {
       document.getElementById("chartStatus").textContent =
         `✅ Added ${msg.added} metrics (${msg.total} total, ${msg.skipped} already present)`;
+    }
+    return;
+  }
+
+  if (msg.type === "DOWNLOAD_CSV_RESULT") {
+    if (msg.error) {
+      document.getElementById("chartStatus").textContent = `⚠ ${msg.error}`;
+    } else {
+      document.getElementById("chartStatus").textContent =
+        `✅ CSV downloaded (${msg.series} metrics × ${msg.rows} periods)`;
     }
     return;
   }

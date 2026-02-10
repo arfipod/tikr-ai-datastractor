@@ -420,6 +420,150 @@
     });
   }
 
+  /**
+   * Downloads the current financial chart data as a CSV file.
+   *
+   * Strategy:
+   *  1. Walk up from a known chart button to find the Vue component
+   *     whose `selectedrows` prop holds the chart series (English names).
+   *  2. Collect every unique timestamp across all series.
+   *  3. Build a CSV: first column = date, then one column per metric.
+   *  4. Trigger a browser download via a Blob URL.
+   *
+   * Falls back to Highcharts' built-in chart.downloadCSV() if the
+   * Vue component path isn't found.
+   */
+  async function downloadCSV(runId) {
+    log("downloadCSV start", { runId });
+
+    // ── 1. Try to find the Vue chart component via the DOM ──
+    let chartComp = null;
+
+    const candidates = [...document.querySelectorAll("button")].filter(
+      (b) => b.textContent.trim() === "Download"
+    );
+
+    for (const btn of candidates) {
+      let el = btn;
+      while (el) {
+        if (el.__vue__) {
+          const comp = el.__vue__;
+          const methods = Object.keys(comp.$options?.methods || {});
+          if (methods.includes("clearChart") && comp.selectedrows) {
+            chartComp = comp;
+            break;
+          }
+        }
+        el = el.parentElement;
+      }
+      if (chartComp) break;
+    }
+
+    // ── 2. Build CSV from selectedrows (English names) ──
+    if (chartComp && Array.isArray(chartComp.selectedrows) && chartComp.selectedrows.length) {
+      const series = chartComp.selectedrows;
+      log("downloadCSV: found selectedrows", { runId, count: series.length });
+
+      // Collect all unique timestamps
+      const dateSet = new Set();
+      for (const s of series) {
+        for (const p of s.data) dateSet.add(p.x);
+      }
+      const dates = [...dateSet].sort((a, b) => a - b);
+
+      // Build a lookup: seriesName -> { timestamp -> value }
+      const dataMap = new Map();
+      for (const s of series) {
+        const m = new Map();
+        for (const p of s.data) m.set(p.x, p.y);
+        dataMap.set(s.name, m);
+      }
+
+      // Header row
+      const header = ["Date", ...series.map((s) => s.name)];
+
+      // Data rows
+      const rows = dates.map((ts) => {
+        const dateStr = new Date(ts).toISOString().split("T")[0]; // YYYY-MM-DD
+        const vals = series.map((s) => {
+          const v = dataMap.get(s.name)?.get(ts);
+          return v != null ? v : "";
+        });
+        return [dateStr, ...vals];
+      });
+
+      // Encode CSV (quote fields that contain commas)
+      const csvEscape = (v) => {
+        const s = String(v);
+        return s.includes(",") || s.includes('"') || s.includes("\n")
+          ? '"' + s.replace(/"/g, '""') + '"'
+          : s;
+      };
+      const csvLines = [header.map(csvEscape).join(",")];
+      for (const row of rows) csvLines.push(row.map(csvEscape).join(","));
+      const csvText = csvLines.join("\n");
+
+      // ── 3. Trigger download ──
+      const meta = getMeta();
+      const tab = new URL(location.href).searchParams.get("tab") || "data";
+      const filename = `${meta.ticker || "TIKR"}_${tab}_chart.csv`;
+
+      const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 200);
+
+      log("downloadCSV: file triggered", { runId, filename, series: series.length, rows: rows.length });
+      toast(`✅ Downloaded ${filename}`);
+
+      relay({
+        type:   "DOWNLOAD_CSV_RESULT",
+        series: series.length,
+        rows:   rows.length,
+        filename,
+        runId,
+      });
+      return;
+    }
+
+    // ── Fallback: use Highcharts' built-in downloadCSV ──
+    log("downloadCSV: selectedrows not found, trying Highcharts fallback", { runId });
+
+    const hcDivs = [...document.querySelectorAll("[data-highcharts-chart]")];
+    const financialDiv = hcDivs.find(
+      (d) => d.parentElement?.className?.includes("table-chart-container")
+    );
+    const chart = financialDiv?.__vue__?.chart;
+
+    if (chart && typeof chart.downloadCSV === "function") {
+      chart.downloadCSV();
+      log("downloadCSV: Highcharts fallback triggered", { runId });
+      toast("✅ CSV downloaded (via Highcharts)");
+
+      relay({
+        type:   "DOWNLOAD_CSV_RESULT",
+        series: chart.series?.length || 0,
+        rows:   0,
+        filename: "highcharts-export.csv",
+        runId,
+      });
+      return;
+    }
+
+    // ── Nothing worked ──
+    err("downloadCSV: no chart data found", { runId });
+    toast("⚠ No chart data found");
+    relay({ type: "DOWNLOAD_CSV_RESULT", error: "No chart data found on this page", runId });
+  }
+
   // Escucha SCRAPE_CMD desde content.js
   document.addEventListener("__tikr_to_main", (e) => {
     const raw = e?.detail;
@@ -441,11 +585,14 @@
       if (msg.type === "TABLE_ADD_ALL_CMD") {
         tableAddAll(msg.runId || null);
       }
+      if (msg.type === "DOWNLOAD_CSV_CMD") {
+        downloadCSV(msg.runId || null);
+      }
     } catch (ex) {
       err("failed parsing __tikr_to_main.detail", String(ex));
     }
   });
 
-  window.__tikrScraper = { run, JOBS, tableAddAll };
+  window.__tikrScraper = { run, JOBS, tableAddAll, downloadCSV };
   log("tikr_scraper ready", { href: location.href });
 })();
