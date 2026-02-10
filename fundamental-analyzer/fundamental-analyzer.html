@@ -241,6 +241,8 @@ body{
 </head>
 <body>
 
+<!-- What changed (mini changelog): Added Harmony/Red Flags, 2-minute scorecard, Auto+Custom profiles, stronger parser synonyms/number suffix parsing, Balance Sheet Reality Check, Cash Flow Truth Serum, GAAP-vs-Normalized valuation checks, value-trap detector, bilingual tooltips, and confidence-aware summary controls. -->
+
 <!-- LANDING -->
 <div id="landing">
   <h1>Fundamental Analyzer</h1>
@@ -249,13 +251,24 @@ body{
     <textarea id="dataInput" placeholder="Paste your TIKR financial data here...&#10;&#10;Example format:&#10;MEDP – Medpace Holdings, Inc.&#10;Price: US$530.35 | Extracted: ...&#10;Period: annual | Sections: 7&#10;---&#10;Income Statement&#10;| Cuenta de resultados | TIKR.com | 31/12/13 | ..."></textarea>
     <div style="display:flex;justify-content:center">
       <select id="profileSelect" class="profile-select" aria-label="Industry profile">
+        <option value="auto">Profile: Auto (infer)</option>
         <option value="default">Profile: Default</option>
         <option value="saas">Profile: SaaS / Asset-light</option>
         <option value="retail">Profile: Retail / Distribution</option>
         <option value="industrial">Profile: Industrial</option>
         <option value="financial">Profile: Financials</option>
         <option value="utility">Profile: Utility / Telecom</option>
+        <option value="custom">Profile: Custom JSON</option>
       </select>
+    </div>
+    <div id="customProfileWrap" style="display:none;margin-top:.6rem;">
+      <textarea id="customProfileInput" style="width:100%;min-height:120px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:.76rem;padding:.7rem" placeholder='Custom thresholds JSON, e.g. {"gross_margin":{"bull":55,"neutral":35},"roic":{"bull":16,"neutral":9},"opex_gp":{"bull":58,"neutral":72}}'></textarea>
+      <div style="font-size:.75rem;color:var(--text-dim);margin-top:.2rem">Custom profile overrides active thresholds only.</div>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:.5rem;">
+      <label style="font-size:.8rem;color:var(--text-dim);display:flex;gap:.4rem;align-items:center;">
+        <input type="checkbox" id="includeAnalystNoise"> Include analyst noise in summary
+      </label>
     </div>
     <div style="display:flex;justify-content:center">
       <button class="btn-analyze" onclick="analyzeData()">Analyze Financials</button>
@@ -276,9 +289,18 @@ function parseNumber(s) {
   s = s.trim();
   if (s === '' || s === '-') return null;
   const isPct = s.includes('%');
+  const multMatch = s.match(/([\d.,\s()\-+]+)\s*([BMK])\b/i);
+  const suffix = multMatch ? multMatch[2].toUpperCase() : null;
   let neg = false;
   if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1,-1); }
-  s = s.replace(/US\$/g,'').replace(/\$/g,'').replace(/%/g,'').replace(/x$/i,'').trim();
+  s = s
+    .replace(/US\$/gi,'')
+    .replace(/[€£¥]/g,'')
+    .replace(/\$/g,'')
+    .replace(/%/g,'')
+    .replace(/x$/i,'')
+    .replace(/[BMK]$/i, '')
+    .trim();
   if (s === '') return null;
   const lastComma = s.lastIndexOf(',');
   const lastDot = s.lastIndexOf('.');
@@ -291,7 +313,9 @@ function parseNumber(s) {
   }
   const val = parseFloat(s);
   if (isNaN(val)) return null;
-  return neg ? -val : val;
+  const multiplier = suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : suffix === 'K' ? 1e3 : 1;
+  const finalVal = val * multiplier;
+  return neg ? -finalVal : finalVal;
 }
 
 
@@ -487,6 +511,9 @@ const PROFILE_THRESHOLDS = {
   },
   ev_ebitda: {
     default: { bull: 12, neutral: 20 }, saas: { bull: 20, neutral: 30 }, retail: { bull: 10, neutral: 16 }, industrial: { bull: 11, neutral: 17 }, financial: { bull: 14, neutral: 22 }, utility: { bull: 11, neutral: 16 }
+  },
+  opex_gp: {
+    default: { bull: 60, neutral: 75 }, saas: { bull: 62, neutral: 78 }, retail: { bull: 55, neutral: 70 }, industrial: { bull: 60, neutral: 75 }, financial: { bull: 68, neutral: 80 }, utility: { bull: 58, neutral: 72 }
   }
 };
 
@@ -496,8 +523,50 @@ function metricThreshold(metric, profile, kind) {
   return scope[kind];
 }
 
+function inferProfile(snapshot = {}) {
+  let score = { saas: 0, retail: 0, industrial: 0, utility: 0, financial: 0, default: 0 };
+  if (snapshot.grossMargin !== null) {
+    if (snapshot.grossMargin >= 60) score.saas += 2;
+    if (snapshot.grossMargin <= 30) { score.retail += 1; score.industrial += 1; }
+  }
+  if (snapshot.inventoryToAssets !== null && snapshot.inventoryToAssets > 8) score.retail += 2;
+  if (snapshot.capexSales !== null) {
+    if (snapshot.capexSales > 8) { score.industrial += 2; score.utility += 1; }
+    if (snapshot.capexSales < 4) score.saas += 1;
+  }
+  if (snapshot.netDebtEbitda !== null && snapshot.netDebtEbitda > 3) score.utility += 1;
+  const sorted = Object.entries(score).sort((a,b)=>b[1]-a[1]);
+  const [winner, pts] = sorted[0] || ['default', 0];
+  const secondPts = sorted[1]?.[1] || 0;
+  return { profile: pts >= 2 && pts - secondPts >= 1 ? winner : 'default', confidence: Math.min(1, pts/4) };
+}
+
+function parseCustomProfile() {
+  const txt = document.getElementById('customProfileInput')?.value?.trim();
+  if (!txt) return null;
+  try {
+    const cfg = JSON.parse(txt);
+    return cfg && typeof cfg === 'object' ? cfg : null;
+  } catch {
+    return null;
+  }
+}
+
 // Helper to create a standard analysis item
-function makeItem(name, detail, vals, signal, signalText, explanation) {
+const METRIC_TIPS = {
+  harmony: 'Harmony (armonía): statements agree on growth, profitability, and cash quality.',
+  grossMargin: 'Gross Margin (margen bruto): % of revenue left after COGS.',
+  netMargin: 'Net Margin (margen neto): % of revenue kept as net income.',
+  moat: 'Moat (foso competitivo): durable advantage protecting profits.',
+  dilution: 'Dilution (dilución): more shares reduce ownership per share.',
+  accruals: 'Accruals (devengos): accounting profit not yet backed by cash.',
+  fcf: 'Free Cash Flow (flujo de caja libre): CFO minus capex.',
+  sbc: 'Stock-based comp (compensación en acciones): non-cash now, real dilution later.',
+  netDebt: 'Net Debt (deuda neta): debt minus cash and short-term investments.',
+  deferredRevenue: 'Deferred revenue (ingresos diferidos): cash collected before service delivery.'
+};
+
+function makeItem(name, detail, vals, signal, signalText, explanation, meta = {}) {
   return {
     name,
     detail: detail || '',
@@ -505,12 +574,14 @@ function makeItem(name, detail, vals, signal, signalText, explanation) {
     signal: signal || 'neutral',
     signalText: signalText || '',
     explanation: explanation || '',
+    tip: meta.tip || '',
+    highConfidence: meta.highConfidence !== false,
     confidence: getConfidence(vals || [])
   };
 }
 
-function analyze(data, profile = 'default') {
-  const results = { scores: {}, sections: [] };
+function analyze(data, profile = 'default', options = {}) {
+  const results = { scores: {}, sections: [], meta: { highConfidence: [], lowConfidence: [] } };
   const is = data.sections['Income Statement'];
   const bs = data.sections['Balance Sheet'];
   const cf = data.sections['Cash Flow'];
@@ -518,6 +589,15 @@ function analyze(data, profile = 'default') {
   const vm = data.sections['Valuation Multiples'];
   const apt = data.sections['Analyst Price Targets'];
   const ce = data.sections['Consensus Estimates'];
+  let activeProfile = profile;
+  let customThresholds = options.customThresholds || null;
+
+  function mt(metric, kind) {
+    if (customThresholds && customThresholds[metric] && typeof customThresholds[metric][kind] === 'number') {
+      return customThresholds[metric][kind];
+    }
+    return metricThreshold(metric, activeProfile, kind);
+  }
 
   // Helper to find row by partial label match (case-insensitive, multi-keyword)
   function findRow(section, ...keywords) {
@@ -539,20 +619,32 @@ function analyze(data, profile = 'default') {
     return null;
   }
 
+  // Pre-detect core rows with broader synonyms for robust parsing
+  const revenueRow = findRowAny(is, 'Ingresos totales', 'Total Revenue', 'Total Revenues', 'Revenue As Reported', 'Revenues', 'Sales', 'Ventas');
+  const grossProfitRow = findRowAny(is, 'Gross Profit', 'Beneficio bruto', 'Ganancia bruta');
+  const opIncomeRowCore = findRowAny(is, 'Operating Income', 'EBIT', 'Ingresos de explotación', 'Resultado operativo');
+  const netIncomeRowCore = findRowAny(is, 'Net Income', 'Net earnings', 'Beneficio neto', 'Resultado neto');
+  const grossMarginRowCore = findRowAny(ratios, 'Gross Margin', 'Margen de beneficio bruto', 'Margen bruto');
+  const capexCore = findRowAny(cf, 'Capital Expenditures', 'CapEx', 'Gastos de capital', 'Inversiones en capital');
+  const debtCore = findRowAny(bs, 'Total Debt', 'Deuda total');
+  const invCore = findRowAny(bs, 'Inventory', 'Inventories', 'Inventarios');
+  const assetsCore = findRowAny(bs, 'Total Assets', 'Activos totales');
+
+  if (profile === 'auto') {
+    const gm = getLatest(grossMarginRowCore);
+    const capexSales = (getLatest(capexCore) !== null && getLatest(revenueRow) ? Math.abs(getLatest(capexCore)) / getLatest(revenueRow) * 100 : null);
+    const invPctAssets = (getLatest(invCore) !== null && getLatest(assetsCore) ? Math.abs(getLatest(invCore)) / getLatest(assetsCore) * 100 : null);
+    const ndE = null;
+    const inferred = inferProfile({ grossMargin: gm, capexSales, inventoryToAssets: invPctAssets, netDebtEbitda: ndE });
+    activeProfile = inferred.profile;
+    results.profileInference = inferred;
+  }
+
   // ══════════════════════════════════════════════════════════
   // 1. REVENUE & GROWTH ANALYSIS
   // ══════════════════════════════════════════════════════════
   const growthItems = [];
 
-  const revenueRow = findRowAny(
-    is,
-    'Ingresos totales',
-    'Revenue As Reported',
-    'Total Revenue',
-    'Total Revenues',
-    'Revenues',
-    'Sales'
-  );
   if (revenueRow) {
     const vals = getRecentValues(revenueRow, 10);
     const latest = vals[vals.length - 1];
@@ -716,8 +808,8 @@ function analyze(data, profile = 'default') {
       'Gross Margin',
       `Latest: ${latest?.toFixed(1)}% — Trend: ${trend}`,
       vals,
-      latest > metricThreshold('gross_margin', profile, 'bull') ? 'bull' : latest > metricThreshold('gross_margin', profile, 'neutral') ? 'neutral' : 'bear',
-      latest > metricThreshold('gross_margin', profile, 'bull') + 10 ? 'Wide Moat' : latest > metricThreshold('gross_margin', profile, 'bull') ? 'Strong' : latest > metricThreshold('gross_margin', profile, 'neutral') ? 'Decent' : 'Thin',
+      latest > mt('gross_margin', 'bull') ? 'bull' : latest > mt('gross_margin', 'neutral') ? 'neutral' : 'bear',
+      latest > mt('gross_margin', 'bull') + 10 ? 'Wide Moat' : latest > mt('gross_margin', 'bull') ? 'Strong' : latest > mt('gross_margin', 'neutral') ? 'Decent' : 'Thin',
       sd !== null ? `Stability: σ=${sd.toFixed(1)}pp (${sd < 3 ? 'very stable' : sd < 6 ? 'stable' : 'volatile'})` : ''
     ));
   }
@@ -833,6 +925,25 @@ function analyze(data, profile = 'default') {
         cogsVals,
         delta < -2 ? 'bull' : delta < 2 ? 'neutral' : 'bear',
         delta < -2 ? 'Improving' : delta < 2 ? 'Stable' : 'Rising Costs'
+      ));
+    }
+  }
+
+  // Operating Expenses as % of Gross Profit (golden rule)
+  const opExRow = findRowAny(is, 'Operating Expenses', 'Gastos operativos');
+  const opIncomeGolden = opIncomeRowCore;
+  if ((grossProfitRow && opIncomeGolden) || (opExRow && grossProfitRow)) {
+    const gp = getLatest(grossProfitRow);
+    const opEx = opExRow ? Math.abs(getLatest(opExRow) || 0) : (gp !== null && getLatest(opIncomeGolden) !== null ? Math.abs(gp - getLatest(opIncomeGolden)) : null);
+    if (gp > 0 && opEx !== null) {
+      const ratio = opEx / gp * 100;
+      costItems.push(makeItem(
+        'Operating Expenses as % of Gross Profit',
+        `OpEx/Gross Profit: ${ratio.toFixed(1)}%`,
+        [ratio],
+        ratio <= mt('opex_gp','bull') ? 'bull' : ratio <= mt('opex_gp','neutral') ? 'neutral' : 'bear',
+        ratio <= mt('opex_gp','bull') ? 'Controlled' : ratio <= mt('opex_gp','neutral') ? 'Watchlist' : 'Gross profit consumed',
+        'Golden rule: OpEx should not eat most gross profit (gastos operativos controlados).'
       ));
     }
   }
@@ -982,8 +1093,8 @@ function analyze(data, profile = 'default') {
       'ROIC (Return on Invested Capital)',
       `Latest: ${latest?.toFixed(1)}% | Avg: ${avgVal?.toFixed(1)}% — Trend: ${trend}`,
       vals,
-      latest > metricThreshold('roic', profile, 'bull') ? 'bull' : latest > metricThreshold('roic', profile, 'neutral') ? 'neutral' : 'bear',
-      latest > metricThreshold('roic', profile, 'bull') + 5 ? 'Exceptional Moat' : latest > metricThreshold('roic', profile, 'bull') ? 'Wide Moat' : latest > metricThreshold('roic', profile, 'neutral') ? 'Narrow Moat' : 'No Moat',
+      latest > mt('roic', 'bull') ? 'bull' : latest > mt('roic', 'neutral') ? 'neutral' : 'bear',
+      latest > mt('roic', 'bull') + 5 ? 'Exceptional Moat' : latest > mt('roic', 'bull') ? 'Wide Moat' : latest > mt('roic', 'neutral') ? 'Narrow Moat' : 'No Moat',
       'ROIC > WACC (~8-10%) = value creation. Consistency matters more than level'
     ));
   }
@@ -1074,7 +1185,7 @@ function analyze(data, profile = 'default') {
     const bullCount = moatItems.filter(i => i.signal === 'bull').length;
     const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bullCount >= 1 ? 'average' : 'poor';
     results.scores.moat = grade;
-    results.sections.push({ title: 'Returns & Economic Moat', icon: '🏰', grade, items: moatItems });
+    results.sections.push({ id: 'moat', title: 'Returns & Economic Moat', icon: '🏰', grade, items: moatItems });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1675,8 +1786,8 @@ function analyze(data, profile = 'default') {
       'EV/EBITDA (NTM)',
       `Latest: ${latest?.toFixed(1)}x | Hist Avg: ${avgVal?.toFixed(1)}x`,
       vals,
-      latest < metricThreshold('ev_ebitda', profile, 'bull') ? 'bull' : latest < metricThreshold('ev_ebitda', profile, 'neutral') ? 'neutral' : 'bear',
-      latest < metricThreshold('ev_ebitda', profile, 'bull') - 2 ? 'Cheap' : latest < metricThreshold('ev_ebitda', profile, 'bull') ? 'Attractive' : latest < metricThreshold('ev_ebitda', profile, 'neutral') ? 'Fair' : 'Rich'
+      latest < mt('ev_ebitda', 'bull') ? 'bull' : latest < mt('ev_ebitda', 'neutral') ? 'neutral' : 'bear',
+      latest < mt('ev_ebitda', 'bull') - 2 ? 'Cheap' : latest < mt('ev_ebitda', 'bull') ? 'Attractive' : latest < mt('ev_ebitda', 'neutral') ? 'Fair' : 'Rich'
     ));
   }
 
@@ -1753,12 +1864,21 @@ function analyze(data, profile = 'default') {
     }
   }
 
+  valItems.push(makeItem(
+    'P/E Context Map (informational)',
+    'Cyclical 5-10 · Stable 10-15 · Quality 15-25 · Elite 30-50+',
+    [],
+    'info',
+    'Context only',
+    'Use as a map, not a hard rule. Compare growth durability and balance-sheet risk.'
+  ));
+
   if (valItems.length) {
     const bullCount = valItems.filter(i => i.signal === 'bull').length;
     const bearCount = valItems.filter(i => i.signal === 'bear').length;
     const grade = bullCount >= 4 ? 'excellent' : bullCount >= 2 ? 'good' : bearCount >= 4 ? 'poor' : 'average';
     results.scores.valuation = grade;
-    results.sections.push({ title: 'Valuation', icon: '🏷️', grade, items: valItems });
+    results.sections.push({ id: 'valuation', title: 'Valuation', icon: '🏷️', grade, items: valItems });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -2023,10 +2143,220 @@ function analyze(data, profile = 'default') {
     }
 
     if (analystItems.length) {
-      results.sections.push({ title: 'Analyst Sentiment', icon: '🔮', grade: 'info', items: analystItems });
+      results.sections.push({ id: 'analyst-noise', title: 'Analyst Sentiment (Low weight / noisy — ruido)', icon: '🔮', grade: 'info', items: analystItems });
     }
   }
 
+
+  // ══════════════════════════════════════════════════════════
+  // 13. HARMONY & RED FLAGS
+  // ══════════════════════════════════════════════════════════
+  const harmonyItems = [];
+  const niRow = netIncomeRowCore;
+  const dilEpsRow = findRowAny(is, 'Diluted EPS', 'EPS Diluted', ['BPA', 'Diluido']);
+  const cfoRowCore = findRowAny(cf, 'Flujo de caja de las operaciones', 'Operating Cash Flow', 'Cash From Operations');
+  const fcfRowCore = findRowAny(cf, 'Free Cash Flow', 'Flujo de caja libre');
+  const gmRow = grossMarginRowCore;
+  const nmRow = findRowAny(ratios, 'Net Margin', 'Margen neto');
+  const omRow = findRowAny(ratios, 'Operating Margin', 'Margen EBIT');
+
+  const revVals = getRecentValues(revenueRow, 4);
+  const niVals = getRecentValues(niRow, 4);
+  const epsVals = getRecentValues(dilEpsRow, 4);
+  const revY = yoyGrowth(revVals).slice(-1)[0];
+  const niY = yoyGrowth(niVals).slice(-1)[0];
+  const epsY = yoyGrowth(epsVals).slice(-1)[0];
+  const earnY = niY ?? epsY;
+  if (revY !== null && earnY !== null) {
+    const bearish = revY > 4 && earnY < -4;
+    harmonyItems.push(makeItem(
+      'Revenue vs Earnings Harmony',
+      `Revenue YoY ${revY.toFixed(1)}% vs Earnings YoY ${earnY.toFixed(1)}%`,
+      [revY, earnY],
+      bearish ? 'bear' : (revY > 0 && earnY > 0 ? 'bull' : 'neutral'),
+      bearish ? 'Growth-Profit Mismatch' : (revY > 0 && earnY > 0 ? 'Aligned Growth' : 'Mixed'),
+      'Revenue rising while NI/EPS falls can signal weak quality growth.',
+      { tip: METRIC_TIPS.harmony }
+    ));
+  }
+
+  const gmv = getRecentValues(gmRow, 3); const nmv = getRecentValues(nmRow, 3); const omv = getRecentValues(omRow, 3);
+  if (gmv.length && nmv.length) {
+    const gLatest = gmv[gmv.length-1], nLatest = nmv[nmv.length-1];
+    harmonyItems.push(makeItem(
+      'Gross vs Net Margin Quality',
+      `Gross ${gLatest.toFixed(1)}% vs Net ${nLatest.toFixed(1)}%`,
+      [gLatest, nLatest],
+      (gLatest > mt('gross_margin','bull') && nLatest < 5) ? 'bear' : (nLatest > 10 ? 'bull':'neutral'),
+      (gLatest > mt('gross_margin','bull') && nLatest < 5) ? 'Leakage after gross profit' : (nLatest > 10 ? 'Healthy conversion':'Average'),
+      'Classic heuristic: net margin >10% good, >20% excellent (sector-aware).',
+      { tip: METRIC_TIPS.netMargin }
+    ));
+  }
+
+  if (gmv.length >= 2 && omv.length >= 2) {
+    const gDelta = gmv[gmv.length-1] - gmv[0];
+    const oDelta = omv[omv.length-1] - omv[0];
+    harmonyItems.push(makeItem(
+      'Operating Discipline vs Gross Margin',
+      `Gross Δ ${gDelta.toFixed(1)}pp | Op Margin Δ ${oDelta.toFixed(1)}pp`,
+      [gDelta, oDelta],
+      (gDelta >= 0 && oDelta < -1.5) ? 'bear' : (oDelta >= 0 ? 'bull':'neutral'),
+      (gDelta >= 0 && oDelta < -1.5) ? 'Cost pressure' : (oDelta >= 0 ? 'Disciplined':'Watch costs'),
+      'If gross margin is stable but operating margin falls, overhead is eating profitability.'
+    ));
+  }
+
+  const cfoVals = getRecentValues(cfoRowCore, 4);
+  if (niVals.length >= 2 && cfoVals.length >= 2) {
+    const niL = niVals[niVals.length-1], cfoL = cfoVals[cfoVals.length-1];
+    if (niL > 0) {
+      const ratio = cfoL / niL;
+      harmonyItems.push(makeItem(
+        'CFO vs Net Income (Accrual Risk)',
+        `CFO/NI: ${ratio.toFixed(2)}x`,
+        [ratio],
+        ratio < 0.75 ? 'bear' : ratio > 1 ? 'bull' : 'neutral',
+        ratio < 0.75 ? 'Weak cash conversion' : ratio > 1 ? 'Cash-backed earnings' : 'Acceptable',
+        'Low CFO relative to NI can imply accrual-heavy earnings quality risk.',
+        { tip: METRIC_TIPS.accruals }
+      ));
+    }
+  }
+
+  const fcfValsCore = getRecentValues(fcfRowCore, 4);
+  if (revVals.length >= 2 && fcfValsCore.length >= 2) {
+    const revT = getTrend(revVals); const niT = getTrend(niVals.length?niVals:epsVals); const fcfT = getTrend(fcfValsCore);
+    const bear = revT === 'up' && niT === 'up' && (fcfT === 'stable' || fcfT === 'down');
+    harmonyItems.push(makeItem(
+      'FCF Consistency Check',
+      `Revenue trend: ${revT} | Earnings trend: ${niT} | FCF trend: ${fcfT}`,
+      fcfValsCore,
+      bear ? 'bear' : (fcfT === 'up' ? 'bull':'neutral'),
+      bear ? 'Accounting lead, cash lags' : (fcfT === 'up' ? 'Cash confirms':'Neutral'),
+      'FCF is the crown jewel: rising profits should eventually show up in free cash flow.',
+      { tip: METRIC_TIPS.fcf }
+    ));
+  }
+  if (harmonyItems.length) {
+    const bullCount = harmonyItems.filter(i => i.signal === 'bull').length;
+    const bearCount = harmonyItems.filter(i => i.signal === 'bear').length;
+    const grade = bearCount >= 2 ? 'poor' : bullCount >= 3 ? 'good' : 'average';
+    results.sections.push({ id: 'harmony', title: 'Harmony & Red Flags', icon: '🧭', grade, items: harmonyItems });
+    results.scores.harmony = grade;
+  }
+
+  // Balance sheet reality check
+  const balanceItems = [];
+  const debtRow = findRowAny(bs, 'Total Debt', 'Deuda total');
+  const cashRowCore = findRowAny(bs, 'Cash and Cash Equivalents', 'Efectivo y equivalentes', 'Cash & Equivalents');
+  const stInvCore2 = findRowAny(bs, 'Short-Term Investments', 'Inversiones a corto plazo');
+  const stDebtCore = findRowAny(bs, 'Short-Term Debt', 'Current Portion', 'Deuda a corto plazo');
+  const cfoLatest = getLatest(cfoRowCore);
+  const debtL = getLatest(debtRow), cashL = getLatest(cashRowCore) || 0, stInvL = getLatest(stInvCore2) || 0;
+  if (debtL !== null) {
+    const netDebt = debtL - (cashL + stInvL);
+    balanceItems.push(makeItem('Net Debt / Net Cash', `Net ${netDebt < 0 ? 'Cash' : 'Debt'}: ${Math.abs(netDebt).toFixed(0)}`, [netDebt], netDebt < 0 ? 'bull' : 'neutral', netDebt < 0 ? 'Net Cash (Caja neta)' : 'Net Debt', cfoLatest ? `Net debt / CFO ≈ ${(netDebt / cfoLatest).toFixed(1)}x` : '', { tip: METRIC_TIPS.netDebt }));
+  }
+  if (getLatest(stDebtCore) !== null && cashL !== null) {
+    const cov = cashL / (getLatest(stDebtCore) || 1);
+    balanceItems.push(makeItem('Cash / Short-Term Debt', `${cov.toFixed(2)}x coverage`, [cov], cov >= 1 ? 'bull' : cov >= 0.5 ? 'neutral' : 'bear', cov >= 1 ? 'Covered' : cov >= 0.5 ? 'Tight' : 'Refinancing risk'));
+  }
+  const arDays = findRowAny(ratios, 'Days Sales Outstanding', 'DSO', 'Días de ventas pendientes');
+  const arVals = getRecentValues(arDays, 4);
+  if (arVals.length >= 2) {
+    const delta = arVals[arVals.length-1]-arVals[0];
+    balanceItems.push(makeItem('Receivables Days Trend', `DSO Δ ${delta.toFixed(1)} days`, arVals, delta > 7 ? 'bear' : delta < 0 ? 'bull' : 'neutral', delta > 7 ? 'Collections weakening' : delta < 0 ? 'Improving' : 'Stable'));
+  }
+  const invRow2 = findRowAny(bs, 'Inventory', 'Inventories', 'Inventarios');
+  const invVals2 = getRecentValues(invRow2, 4);
+  if (invVals2.length >= 2 && revVals.length >= 2) {
+    const invY = yoyGrowth(invVals2).slice(-1)[0];
+    const revYY = yoyGrowth(revVals).slice(-1)[0];
+    if (invY !== null && revYY !== null) {
+      const spread = invY - revYY;
+      balanceItems.push(makeItem('Inventory vs Revenue Growth', `Inventory YoY ${invY.toFixed(1)}% vs Revenue YoY ${revYY.toFixed(1)}% (Δ ${spread.toFixed(1)}pp)`, [invY, revYY], spread > 12 ? 'bear' : 'neutral', spread > 12 ? 'Build faster than sales' : 'In line', 'Inventory building much faster than sales can raise obsolescence/manipulation risk.'));
+    }
+  }
+  const gw = getLatest(findRowAny(bs, 'Goodwill', 'Fondo de comercio')) || 0;
+  const inta = getLatest(findRowAny(bs, 'Intangible', 'Intangibles', 'Activos intangibles')) || 0;
+  const assetsL = getLatest(assetsCore);
+  if (assetsL) {
+    const pct = ((gw + inta)/assetsL)*100;
+    const impRow = findRowAny(is, 'impairment', 'deterioro', 'write-down', 'goodwill impairment') || findRowAny(cf, 'impairment', 'deterioro', 'write-down');
+    const imp = getLatest(impRow);
+    balanceItems.push(makeItem('Goodwill + Intangibles Concentration', `${pct.toFixed(1)}% of assets${imp ? ` | Impairment: ${Math.abs(imp).toFixed(0)}`:''}`, [pct], pct > 45 || imp ? 'bear' : pct > 25 ? 'neutral' : 'bull', pct > 45 || imp ? 'Impairment watch' : 'Manageable', 'Acquisition premium may be revised down when impairments appear.'));
+  }
+  const deferredRow = findRowAny(bs, 'Deferred Revenue', 'Unearned Revenue', 'Ingresos no devengados', 'Ingresos diferidos');
+  if (deferredRow && revenueRow) {
+    const d = getLatest(deferredRow), r = getLatest(revenueRow);
+    if (d !== null && r) {
+      const ratio = d / r * 100;
+      balanceItems.push(makeItem('Deferred Revenue Signal', `${ratio.toFixed(1)}% of revenue`, getRecentValues(deferredRow,4), ratio > 10 ? 'bull' : 'neutral', ratio > 10 ? 'Useful forward demand' : 'Limited', 'Cash collected for future delivery (ingresos cobrados por adelantado).', { tip: METRIC_TIPS.deferredRevenue }));
+    }
+  }
+  if (balanceItems.length) results.sections.push({ id: 'balance', title: 'Balance Sheet Reality Check', icon: '🧱', grade: balanceItems.filter(i=>i.signal==='bear').length>=2?'poor':'good', items: balanceItems });
+
+  // Cash flow truth serum
+  const truthItems = [];
+  const capexCF = capexCore;
+  let fcfComputed = getLatest(fcfRowCore);
+  if (fcfComputed === null && getLatest(cfoRowCore) !== null && getLatest(capexCF) !== null) {
+    fcfComputed = getLatest(cfoRowCore) - Math.abs(getLatest(capexCF));
+    truthItems.push(makeItem('Computed FCF (CFO - |Capex|)', `Derived FCF: ${fcfComputed.toFixed(0)}`, [fcfComputed], 'info', 'Computed', 'FCF row missing; using CFO minus absolute capex.', { tip: METRIC_TIPS.fcf }));
+  }
+  const daRow2 = findRowAny(is, 'Depreciation', 'Amortization', 'Depreciación y amortización', 'D&A');
+  if (capexCF && daRow2) {
+    const cap = Math.abs(getLatest(capexCF) || 0), da = Math.abs(getLatest(daRow2) || 0);
+    if (da > 0) {
+      const ratio = cap / da;
+      truthItems.push(makeItem('Capex / D&A Heuristic', `${ratio.toFixed(2)}x`, [ratio], ratio > 1.5 ? 'neutral' : ratio < 0.7 ? 'bear' : 'bull', ratio > 1.5 ? 'Expansion capex' : ratio < 0.7 ? 'Potential underinvestment' : 'Maintenance-like', 'Heuristic only: compares reinvestment pace vs asset consumption.'));
+    }
+  }
+  const buyback = Math.abs(getLatest(findRowAny(cf, 'Share Buybacks', 'Common Stock Repurchased', 'Recompra')) || 0);
+  const divPaid = Math.abs(getLatest(findRowAny(cf, 'Dividends Paid', 'Dividendos pagados')) || 0);
+  const debtRepay = Math.abs(getLatest(findRowAny(cf, 'Debt Repaid', 'Deuda reembolsada')) || 0);
+  const cashBuild = getLatest(findRowAny(cf, 'Net Change in Cash', 'Variación neta de tesorería')) || 0;
+  if (fcfComputed !== null) {
+    truthItems.push(makeItem('FCF Uses Summary', `FCF used for buybacks ${buyback.toFixed(0)}, dividends ${divPaid.toFixed(0)}, debt paydown ${debtRepay.toFixed(0)}, cash build ${cashBuild.toFixed(0)}`, [fcfComputed], (fcfComputed < 0 && (buyback+divPaid)>0) ? 'bear':'neutral', (fcfComputed < 0 && (buyback+divPaid)>0) ? 'Returning capital despite negative FCF' : 'Capital allocation context'));
+  }
+  const sbcCore = findRowAny(cf, 'Stock-Based Compensation', 'Compensación basada en acciones', 'SBC');
+  if (sbcCore) {
+    const sbc = Math.abs(getLatest(sbcCore) || 0);
+    if (fcfComputed > 0) {
+      const pct = sbc / fcfComputed * 100;
+      truthItems.push(makeItem('SBC as % of FCF', `${pct.toFixed(1)}%`, [pct], pct > 30 ? 'bear' : pct > 15 ? 'neutral' : 'bull', pct > 30 ? 'High dilution cost' : 'Contained', 'Non-cash in CFO, but real cost via dilution (coste real vía dilución).', { tip: METRIC_TIPS.sbc }));
+    }
+    const niLatest = getLatest(niRow);
+    if (niLatest > 0) {
+      const pctNi = sbc / niLatest * 100;
+      truthItems.push(makeItem('SBC as % of Net Income', `${pctNi.toFixed(1)}%`, [pctNi], pctNi > 20 ? 'bear' : pctNi > 10 ? 'neutral' : 'bull', pctNi > 20 ? 'Earnings quality drag' : 'Acceptable', '', { tip: METRIC_TIPS.sbc }));
+    }
+  }
+  if (truthItems.length) results.sections.push({ id: 'cashflow-truth', title: 'Cash Flow — The Truth Serum', icon: '💧', grade: truthItems.filter(i=>i.signal==='bear').length>=2?'poor':'good', items: truthItems });
+
+  // Valuation philosophy additions
+  const valAdd = [];
+  const gaapEps = findRowAny(is, ['EPS','Diluted'], ['BPA','Diluido']);
+  const adjEps = findRowAny(is, 'Normalized EPS', 'Adjusted EPS', 'EPS (Normalized)', 'BPA normalizado', 'BPA ajustado');
+  if (gaapEps && adjEps) {
+    const g = getLatest(gaapEps), a = getLatest(adjEps);
+    if (g && a) {
+      const gap = ((a - g) / Math.abs(g)) * 100;
+      valAdd.push(makeItem('GAAP vs Adjusted EPS Gap', `GAAP ${g.toFixed(2)} vs Adj ${a.toFixed(2)} (${gap.toFixed(1)}%)`, [gap], Math.abs(gap) > 15 ? 'bear' : 'neutral', Math.abs(gap) > 15 ? 'Large adjustment gap' : 'Close', 'Large GAAP vs adjusted gaps require validating exclusions (e.g., SBC).'));
+    }
+  }
+  const pe = getLatest(findRowAny(vm, 'P/E', 'Price / Earnings', 'NTM P/E'));
+  const pfcf = getLatest(findRowAny(vm, 'Price / Free Cash Flow', 'P/FCF'));
+  const fcfYield = getLatest(findRowAny(vm, 'FCF Yield', 'Free Cash Flow Yield', 'Levered Free Cash Flow Yield'));
+  const marginsWeak = (nmv.length>=2 && nmv[nmv.length-1] < nmv[0]-1.5) || (omv.length>=2 && omv[omv.length-1] < omv[0]-1.5);
+  const revDown = getTrend(revVals) === 'down';
+  const fcfDown = getTrend(fcfValsCore) === 'down';
+  const cheap = (pe && pe < 12) || (pfcf && pfcf < 12) || (fcfYield && fcfYield > 8);
+  if (cheap && (marginsWeak || revDown || fcfDown)) {
+    valAdd.push(makeItem('Potential Value Trap', `Cheap multiple (${pe ? `P/E ${pe.toFixed(1)}` : pfcf ? `P/FCF ${pfcf.toFixed(1)}` : `FCF yield ${fcfYield.toFixed(1)}%`}) + weakening fundamentals`, [], 'bear', 'Possible value trap (trampa de valor)', 'Cheap valuation can be deserved when fundamentals deteriorate.'));
+  }
+  if (valAdd.length) results.sections.push({ id: 'valuation-philosophy', title: 'Valuation Philosophy Checks', icon: '🧮', grade: valAdd.some(i=>i.signal==='bear')?'average':'good', items: valAdd });
   // ══════════════════════════════════════════════════════════
   // OVERALL SCORE
   // ══════════════════════════════════════════════════════════
@@ -2087,6 +2417,27 @@ function renderDashboard(data, results) {
     </div>
   `;
 
+  // 2-minute scorecard
+  const byId = id => results.sections.find(s => s.id === id);
+  const catDefs = [
+    { k:'Quality', sec:['harmony','cashflow-truth','margins'], href:'#harmony' },
+    { k:'Moat', sec:['moat','margins'], href:'#moat' },
+    { k:'Financial Risk', sec:['balance','balanceSheet'], href:'#balance' },
+    { k:'Valuation', sec:['valuation','valuation-philosophy'], href:'#valuation-philosophy' }
+  ];
+  html += `<div class="score-row">`;
+  catDefs.forEach(cat => {
+    const found = cat.sec.map(byId).filter(Boolean);
+    const signals = found.flatMap(f => f.items || []);
+    const bears = signals.filter(i => i.signal === 'bear').length;
+    const bulls = signals.filter(i => i.signal === 'bull').length;
+    const grade = bears >= 2 ? 'poor' : bulls > bears ? 'good' : 'average';
+    const driver = signals[0]?.name || 'Not enough data';
+    const light = grade === 'poor' ? '🔴' : grade === 'good' ? '🟢' : '🟡';
+    html += `<div class="score-card ${grade} fade-up"><div class="label">2-minute ${cat.k}</div><div class="value">${light} ${gradeLabel(grade)}</div><div class="detail">${driver} · <a href="${cat.href}" style="color:var(--accent)">see details</a></div></div>`;
+  });
+  html += `</div>`;
+
   // Score cards
   const cards = [
     { label: 'Overall Health', value: overallLabel, grade: results.overall, detail: `Score: ${results.overallScore?.toFixed(1)}/4.0` },
@@ -2112,7 +2463,7 @@ function renderDashboard(data, results) {
   results.sections.forEach((sec, si) => {
     const badgeCls = gradeBadgeClass(sec.grade);
     html += `
-    <div class="section fade-up delay-${Math.min(si+2, 6)}">
+    <div id="${sec.id || `sec-${si}`}" class="section fade-up delay-${Math.min(si+2, 6)}">
       <div class="section-head${si < 4 ? ' open' : ''}" onclick="this.classList.toggle('open')">
         <span style="font-size:1.2rem">${sec.icon}</span>
         <h3>${sec.title}</h3>
@@ -2129,7 +2480,7 @@ function renderDashboard(data, results) {
       html += `
         <div class="a-item">
           <div>
-            <div class="metric-name">${item.name}</div>
+            <div class="metric-name">${item.name}${item.tip ? ` <span class="tip" data-tip="${item.tip}">ⓘ</span>` : ""}</div>
             <div class="metric-detail">${item.detail || ''}</div>
             ${item.explanation ? `<div class="metric-values">${item.explanation}</div>` : ''}
             <div class="metric-values">Confidence: ${(item.confidence * 100).toFixed(0)}%</div>
@@ -2151,38 +2502,34 @@ function renderDashboard(data, results) {
 }
 
 function buildSummary(data, results) {
+  const includeNoise = document.getElementById('includeAnalystNoise')?.checked;
   const strengths = [];
   const risks = [];
-  const neutrals = [];
+  const highConfidence = [];
+  const lowConfidence = [];
+
   results.sections.forEach(sec => {
+    if (!includeNoise && sec.title.toLowerCase().includes('analyst')) return;
     sec.items.forEach(item => {
       if (item.signal === 'bull') strengths.push(item.name + ': ' + item.signalText);
       if (item.signal === 'bear') risks.push(item.name + ': ' + item.signalText);
+      (item.confidence >= 0.66 ? highConfidence : lowConfidence).push(item.name);
     });
   });
 
-  // Investment thesis summary
-  const bullPct = results.totalMetrics > 0 ? (strengths.length / results.totalMetrics * 100).toFixed(0) : 0;
-  const bearPct = results.totalMetrics > 0 ? (risks.length / results.totalMetrics * 100).toFixed(0) : 0;
+  const harmonySec = results.sections.find(s => s.id === 'harmony');
+  const harmonyVerdict = harmonySec ? (harmonySec.grade === 'poor' ? '⚠️ Harmony has meaningful mismatches.' : harmonySec.grade === 'good' ? '✅ Statements are mostly aligned.' : '➖ Mixed harmony signals.') : 'Not enough data.';
 
   return `
   <div class="summary-box fade-up delay-6">
     <h4>📋 Analysis Summary — ${data.ticker || data.company}</h4>
-    <p style="margin-bottom:.75rem;font-size:.82rem;">
-      <span style="color:var(--green)">${strengths.length} bullish</span> · 
-      <span style="color:var(--yellow)">${results.totalMetrics - strengths.length - risks.length} neutral</span> · 
-      <span style="color:var(--red)">${risks.length} bearish</span> signals out of ${results.totalMetrics} metrics
-    </p>
-    <p>
-      <strong style="color:var(--green)">Strengths (${bullPct}%):</strong>
-      ${strengths.length ? strengths.slice(0, 12).join(' · ') + (strengths.length > 12 ? ` · +${strengths.length - 12} more` : '') : 'None identified from available data.'}
-    </p>
-    <p style="margin-top:.5rem">
-      <strong style="color:var(--red)">Risks / Watch (${bearPct}%):</strong>
-      ${risks.length ? risks.slice(0, 12).join(' · ') + (risks.length > 12 ? ` · +${risks.length - 12} more` : '') : 'No significant red flags detected.'}
-    </p>
+    <p style="margin-bottom:.5rem"><strong>Harmony verdict:</strong> ${harmonyVerdict}</p>
+    <p><strong style="color:var(--green)">Top strengths (3):</strong> ${strengths.length ? strengths.slice(0, 3).join(' · ') : 'None identified from available data.'}</p>
+    <p style="margin-top:.45rem"><strong style="color:var(--red)">Top risks (3):</strong> ${risks.length ? risks.slice(0, 3).join(' · ') : 'No major red flags detected.'}</p>
+    <p style="margin-top:.45rem"><strong>High confidence signals:</strong> ${highConfidence.slice(0, 6).join(' · ') || 'Limited'}</p>
+    <p style="margin-top:.35rem"><strong>Low confidence / missing data:</strong> ${lowConfidence.slice(0, 6).join(' · ') || 'Minimal'}</p>
     <p style="margin-top:.75rem;font-size:.78rem;color:var(--text-dim)">
-      ⚠️ This is an automated screening tool, not financial advice. Always do your own due diligence.
+      ⚠️ Screening tool only. Use primary filings and your own due diligence.
     </p>
   </div>`;
 }
@@ -2209,7 +2556,8 @@ function analyzeData() {
       return;
     }
     const selectedProfile = document.getElementById('profileSelect').value || 'default';
-    const results = analyze(data, selectedProfile);
+    const customThresholds = selectedProfile === 'custom' ? parseCustomProfile() : null;
+    const results = analyze(data, selectedProfile, { customThresholds });
     document.getElementById('landing').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     renderDashboard(data, results);
@@ -2225,6 +2573,12 @@ function goBack() {
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('landing').style.display = 'flex';
 }
+
+
+document.getElementById('profileSelect').addEventListener('change', (e) => {
+  const showCustom = e.target.value === 'custom';
+  document.getElementById('customProfileWrap').style.display = showCustom ? 'block' : 'none';
+});
 </script>
 </body>
 </html>
