@@ -258,14 +258,31 @@ body{
     <textarea id="dataInput" placeholder="Paste your TIKR financial data here...&#10;&#10;Example format:&#10;MEDP – Medpace Holdings, Inc.&#10;Price: US$530.35 | Extracted: ...&#10;Period: annual | Sections: 7&#10;---&#10;Income Statement&#10;| Cuenta de resultados | TIKR.com | 31/12/13 | ..."></textarea>
     <div style="display:flex;justify-content:center">
       <select id="profileSelect" class="profile-select" aria-label="Industry profile">
-        <option value="auto">Profile: Auto (infer)</option>
-        <option value="default">Profile: Default</option>
-        <option value="saas">Profile: SaaS / Asset-light</option>
-        <option value="retail">Profile: Retail / Distribution</option>
-        <option value="industrial">Profile: Industrial</option>
-        <option value="financial">Profile: Financials</option>
-        <option value="utility">Profile: Utility / Telecom</option>
-        <option value="custom">Profile: Custom JSON</option>
+        <optgroup label="Auto & General">
+          <option value="auto">Profile: Auto (infer)</option>
+          <option value="default">Profile: Default</option>
+          <option value="custom">Profile: Custom JSON</option>
+        </optgroup>
+        <optgroup label="Asset-light / Growth">
+          <option value="saas">Profile: SaaS / Asset-light</option>
+          <option value="software_tools">Profile: Software Tools</option>
+          <option value="healthcare_services">Profile: Healthcare Services</option>
+        </optgroup>
+        <optgroup label="Cyclical / Industrial">
+          <option value="retail">Profile: Retail / Distribution</option>
+          <option value="industrial">Profile: Industrial</option>
+          <option value="industrial_cyclical">Profile: Industrial Cyclical</option>
+          <option value="semiconductors">Profile: Semiconductors</option>
+          <option value="energy">Profile: Energy</option>
+          <option value="consumer_staples">Profile: Consumer Staples</option>
+        </optgroup>
+        <optgroup label="Financial / Real Assets">
+          <option value="financial">Profile: Financials</option>
+          <option value="banks">Profile: Banks</option>
+          <option value="insurance">Profile: Insurance</option>
+          <option value="utility">Profile: Utility / Telecom</option>
+          <option value="reit">Profile: REIT</option>
+        </optgroup>
       </select>
     </div>
     <div id="customProfileWrap" style="display:none;margin-top:.6rem;">
@@ -288,59 +305,105 @@ body{
 <div id="dashboard"></div>
 
 <script>
+// Fixes in this revision:
+// - Hardened markdown/number/price parsing (locale support, escaped pipes, broad currency parsing).
+// - Added aligned numeric-series helpers with memoization to avoid repeated parseNumber calls.
+// - Improved profile registry + auto-inference with more industries and graceful fallbacks.
+// - Hardened dashboard rendering against injection and null formatting issues.
+// - Wired UX controls (custom profile validation, section toggles/hash-open behavior, summary noise control).
+// - Added lightweight self-tests (window.runSelfTests).
 // =========================================================
 // PARSER — Converts TIKR markdown tables to structured data
 // =========================================================
 function parseNumber(s) {
-  if (!s || typeof s !== 'string') return null;
-  s = s.trim();
-  if (s === '' || s === '-') return null;
-  const isPct = s.includes('%');
-  const multMatch = s.match(/([\d.,\s()\-+]+)\s*([BMK])\b/i);
-  const suffix = multMatch ? multMatch[2].toUpperCase() : null;
-  let neg = false;
-  if (s.startsWith('(') && s.endsWith(')')) { neg = true; s = s.slice(1,-1); }
-  s = s
-    .replace(/US\$/gi,'')
-    .replace(/[€£¥]/g,'')
-    .replace(/\$/g,'')
-    .replace(/%/g,'')
-    .replace(/x$/i,'')
-    .replace(/[BMK]$/i, '')
+  if (s == null) return null;
+  if (typeof s === 'number') return isFinite(s) ? s : null;
+  let str = String(s)
+    .replace(/[\u2012\u2013\u2014\u2015]/g, '-')
+    .replace(/\s+/g, ' ')
     .trim();
-  if (s === '') return null;
-  const lastComma = s.lastIndexOf(',');
-  const lastDot = s.lastIndexOf('.');
-  if (lastComma > lastDot) {
-    s = s.replace(/\./g,'').replace(',','.');
-  } else if (lastDot > lastComma) {
-    s = s.replace(/,/g,'');
-  } else {
-    s = s.replace(/,/g,'');
+
+  if (!str || /^(?:-|—|–|n\/?a|na|null)$/i.test(str)) return null;
+
+  let neg = false;
+  if (/^\(.*\)$/.test(str)) {
+    neg = true;
+    str = str.slice(1, -1).trim();
   }
-  const val = parseFloat(s);
-  if (isNaN(val)) return null;
-  const multiplier = suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : suffix === 'K' ? 1e3 : 1;
-  const finalVal = val * multiplier;
-  return neg ? -finalVal : finalVal;
+  if (/^-/.test(str)) {
+    neg = true;
+    str = str.replace(/^-+/, '').trim();
+  }
+
+  let multiplier = 1;
+  const suffixMatch = str.match(/([BMK])\s*$/i);
+  if (suffixMatch) {
+    const suffix = suffixMatch[1].toUpperCase();
+    multiplier = suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : 1e3;
+    str = str.slice(0, -suffixMatch[0].length).trim();
+  }
+
+  str = str
+    .replace(/(?:US|CA|A)\$/gi, '')
+    .replace(/[€£¥$]/g, '')
+    .replace(/%/g, '')
+    .replace(/[xX]\s*$/, '')
+    .replace(/\s+/g, '');
+  if (!str || !/[\d]/.test(str)) return null;
+
+  const lastComma = str.lastIndexOf(',');
+  const lastDot = str.lastIndexOf('.');
+  if (lastComma !== -1 && lastDot !== -1) {
+    if (lastComma > lastDot) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      str = str.replace(/,/g, '');
+    }
+  } else if (lastComma !== -1) {
+    const parts = str.split(',');
+    if (parts.length > 2 || (parts[1] && parts[1].length === 3)) str = parts.join('');
+    else str = parts[0] + '.' + (parts[1] || '');
+  } else if (lastDot !== -1) {
+    const parts = str.split('.');
+    if (parts.length > 2 || (parts[1] && parts[1].length === 3)) str = parts.join('');
+  }
+
+  const val = Number(str);
+  if (!isFinite(val)) return null;
+  const out = val * multiplier;
+  return neg ? -out : out;
 }
 
 
 function splitMarkdownRow(row) {
-  // Protect escaped pipes (\\|) so we only split on real column separators.
-  const sentinel = '\u241F';
-  const protectedRow = row.replace(/\\\|/g, sentinel);
-
-  const cells = protectedRow
-    .split('|')
-    .map(c => c.replaceAll(sentinel, '|').trim());
-
-  // remove leading/trailing empty cell due to leading/trailing pipe
-  return cells.filter((c, i) => i > 0 && i < cells.length - 1);
+  if (typeof row !== 'string') return [];
+  const out = [];
+  let cur = '';
+  let esc = false;
+  for (const ch of row) {
+    if (esc) {
+      cur += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === '\\') {
+      esc = true;
+      cur += ch;
+      continue;
+    }
+    if (ch === '|') {
+      out.push(cur.trim().replace(/\\\|/g, '|'));
+      cur = '';
+    } else cur += ch;
+  }
+  out.push(cur.trim().replace(/\\\|/g, '|'));
+  if (row.trim().startsWith('|')) out.shift();
+  if (row.trim().endsWith('|')) out.pop();
+  return out;
 }
 function parseTIKR(raw) {
   const lines = raw.split('\n').map(l => l.trim()).filter(l => l);
-  const data = { ticker: '', company: '', price: null, priceNum: null, extractDate: '', period: '', sections: {} };
+  const data = { ticker: '', company: '', price: null, priceRaw: '', priceNum: null, currency: '', extractDate: '', period: '', sections: {} };
   const firstLineRaw = (lines[0] || '').replace(/^#+\s*/, '').trim();
 
   let ticker = '';
@@ -365,9 +428,23 @@ function parseTIKR(raw) {
   data.company = company || data.company || firstLineRaw;
 
 
+  const parsePriceFromLine = (l) => {
+    const m = l.match(/Price:\s*([^|\n]*)/i);
+    if (!m) return null;
+    const rawPrice = (m[1] || '').trim();
+    if (!rawPrice) return { raw: '', num: null, currency: '' };
+    const curr = (rawPrice.match(/^(US\$|CA\$|A\$|SEK|EUR|€|£|¥|\$)/i) || [])[1] || '';
+    return { raw: rawPrice, num: parseNumber(rawPrice), currency: curr };
+  };
+
   for (const l of lines) {
-    const pm = l.match(/Price:\s*(US\$[\d.,]+)/);
-    if (pm) { data.price = pm[1]; data.priceNum = parseNumber(pm[1]); }
+    const pm = parsePriceFromLine(l);
+    if (pm) {
+      data.priceRaw = pm.raw;
+      data.price = pm.raw;
+      data.priceNum = pm.num;
+      data.currency = pm.currency;
+    }
     const dm = l.match(/Extracted:\s*(.+)/);
     if (dm) data.extractDate = dm[1];
     const prm = l.match(/Period:\s*(\w+)/);
@@ -376,10 +453,12 @@ function parseTIKR(raw) {
 
   // Try to capture price from the headline if "Price:" line doesn't contain it
   if (!data.price) {
-    const p = firstLineRaw.match(/US\$\s*[\d.,]+/);
+    const p = firstLineRaw.match(/(US\$|CA\$|A\$|SEK\s+|€|£|¥|\$)\s*[\d.,]+/i);
     if (p) {
-      data.price = p[0].replace(/\s+/g, '');  // "US$188.29"
+      data.priceRaw = p[0].trim();
+      data.price = data.priceRaw;
       data.priceNum = parseNumber(p[0]);
+      data.currency = (p[1] || '').trim();
     }
   }
 
@@ -418,7 +497,7 @@ function parseTIKR(raw) {
       }
       if (label === 'TIKR.com' || label === '---') continue;
       const values = cells.slice(1);
-      parsed.push({ label, values, dates });
+      parsed.push({ label, values, dates, numericValues: values.map(v => parseNumber(v)) });
     }
     data.sections[secName] = { dates, rows: parsed };
   }
@@ -430,19 +509,32 @@ function parseTIKR(raw) {
 // =========================================================
 function getRecentValues(row, n = 5) {
   if (!row) return [];
-  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
-  return vals.slice(-n);
+  return getNumericSeries(row).filter(v => v !== null).slice(-n);
+}
+
+function getNumericSeries(row) {
+  if (!row) return [];
+  if (!Array.isArray(row.numericValues)) {
+    row.numericValues = (row.values || []).map(v => parseNumber(v));
+  }
+  return row.numericValues.slice();
+}
+
+function getRecentNumericSeries(row, n = 5) {
+  if (!row) return [];
+  const all = getNumericSeries(row);
+  return all.slice(Math.max(0, all.length - n));
 }
 
 function getLatest(row) {
   if (!row) return null;
-  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
+  const vals = getNumericSeries(row).filter(v => v !== null);
   return vals.length > 0 ? vals[vals.length - 1] : null;
 }
 
 function getPrevious(row) {
   if (!row) return null;
-  const vals = row.values.map(v => parseNumber(v)).filter(v => v !== null);
+  const vals = getNumericSeries(row).filter(v => v !== null);
   return vals.length > 1 ? vals[vals.length - 2] : null;
 }
 
@@ -479,7 +571,7 @@ function yoyGrowth(vals) {
   if (!vals || vals.length < 2) return [];
   return vals.slice(1).map((v, i) => {
     const prev = vals[i];
-    if (!prev || prev === 0) return null;
+    if (prev === null || v === null || prev === 0) return null;
     return ((v - prev) / Math.abs(prev)) * 100;
   });
 }
@@ -509,39 +601,45 @@ function getConfidence(vals) {
   return Math.min(1, Math.max(0.25, valid / Math.max(3, total)));
 }
 
-const PROFILE_THRESHOLDS = {
-  gross_margin: {
-    default: { bull: 40, neutral: 25 }, saas: { bull: 70, neutral: 55 }, retail: { bull: 30, neutral: 18 }, industrial: { bull: 35, neutral: 20 }, financial: { bull: 35, neutral: 20 }, utility: { bull: 35, neutral: 22 }
-  },
-  roic: {
-    default: { bull: 20, neutral: 10 }, saas: { bull: 18, neutral: 10 }, retail: { bull: 14, neutral: 8 }, industrial: { bull: 15, neutral: 8 }, financial: { bull: 12, neutral: 6 }, utility: { bull: 10, neutral: 6 }
-  },
-  ev_ebitda: {
-    default: { bull: 12, neutral: 20 }, saas: { bull: 20, neutral: 30 }, retail: { bull: 10, neutral: 16 }, industrial: { bull: 11, neutral: 17 }, financial: { bull: 14, neutral: 22 }, utility: { bull: 11, neutral: 16 }
-  },
-  opex_gp: {
-    default: { bull: 60, neutral: 75 }, saas: { bull: 62, neutral: 78 }, retail: { bull: 55, neutral: 70 }, industrial: { bull: 60, neutral: 75 }, financial: { bull: 68, neutral: 80 }, utility: { bull: 58, neutral: 72 }
-  }
+const PROFILES = {
+  default: { label: 'Default', thresholds: { gross_margin: { bull: 40, neutral: 25 }, roic: { bull: 20, neutral: 10 }, ev_ebitda: { bull: 12, neutral: 20 }, opex_gp: { bull: 60, neutral: 75 } }, weights: { valuation: 1, margins: 1, debt: 1 } },
+  saas: { label: 'SaaS / Asset-light', thresholds: { gross_margin: { bull: 70, neutral: 55 }, roic: { bull: 18, neutral: 10 }, ev_ebitda: { bull: 20, neutral: 30 }, opex_gp: { bull: 62, neutral: 78 } } },
+  software_tools: { label: 'Software Tools', thresholds: { gross_margin: { bull: 65, neutral: 48 }, roic: { bull: 16, neutral: 9 }, ev_ebitda: { bull: 18, neutral: 28 }, opex_gp: { bull: 60, neutral: 76 } } },
+  healthcare_services: { label: 'Healthcare Services', thresholds: { gross_margin: { bull: 48, neutral: 35 }, roic: { bull: 14, neutral: 8 }, ev_ebitda: { bull: 14, neutral: 22 }, opex_gp: { bull: 64, neutral: 78 } } },
+  retail: { label: 'Retail', thresholds: { gross_margin: { bull: 30, neutral: 18 }, roic: { bull: 14, neutral: 8 }, ev_ebitda: { bull: 10, neutral: 16 }, opex_gp: { bull: 55, neutral: 70 } } },
+  industrial: { label: 'Industrial', thresholds: { gross_margin: { bull: 35, neutral: 20 }, roic: { bull: 15, neutral: 8 }, ev_ebitda: { bull: 11, neutral: 17 }, opex_gp: { bull: 60, neutral: 75 } } },
+  industrial_cyclical: { label: 'Industrial Cyclical', thresholds: { gross_margin: { bull: 32, neutral: 18 }, roic: { bull: 13, neutral: 7 }, ev_ebitda: { bull: 9, neutral: 15 }, opex_gp: { bull: 58, neutral: 74 } } },
+  semiconductors: { label: 'Semiconductors', thresholds: { gross_margin: { bull: 55, neutral: 40 }, roic: { bull: 18, neutral: 10 }, ev_ebitda: { bull: 14, neutral: 24 }, opex_gp: { bull: 66, neutral: 80 } } },
+  financial: { label: 'Financials', thresholds: { gross_margin: { bull: 35, neutral: 20 }, roic: { bull: 12, neutral: 6 }, ev_ebitda: { bull: 14, neutral: 22 }, opex_gp: { bull: 68, neutral: 80 } } },
+  banks: { label: 'Banks', thresholds: { gross_margin: { bull: 35, neutral: 20 }, roic: { bull: 10, neutral: 5 }, ev_ebitda: { bull: 16, neutral: 24 }, opex_gp: { bull: 72, neutral: 84 } }, enabledMetrics: { cet1: true, nim: true } },
+  insurance: { label: 'Insurance', thresholds: { gross_margin: { bull: 30, neutral: 18 }, roic: { bull: 11, neutral: 6 }, ev_ebitda: { bull: 10, neutral: 16 }, opex_gp: { bull: 70, neutral: 82 } }, enabledMetrics: { combined_ratio: true } },
+  utility: { label: 'Utility / Telecom', thresholds: { gross_margin: { bull: 35, neutral: 22 }, roic: { bull: 10, neutral: 6 }, ev_ebitda: { bull: 11, neutral: 16 }, opex_gp: { bull: 58, neutral: 72 } } },
+  energy: { label: 'Energy', thresholds: { gross_margin: { bull: 45, neutral: 30 }, roic: { bull: 12, neutral: 7 }, ev_ebitda: { bull: 7, neutral: 12 }, opex_gp: { bull: 62, neutral: 78 } } },
+  reit: { label: 'REIT', thresholds: { gross_margin: { bull: 55, neutral: 35 }, roic: { bull: 8, neutral: 4 }, ev_ebitda: { bull: 12, neutral: 18 }, opex_gp: { bull: 68, neutral: 82 } }, enabledMetrics: { ffo: true } },
+  consumer_staples: { label: 'Consumer Staples', thresholds: { gross_margin: { bull: 45, neutral: 30 }, roic: { bull: 14, neutral: 8 }, ev_ebitda: { bull: 12, neutral: 18 }, opex_gp: { bull: 60, neutral: 75 } } }
 };
 
 function metricThreshold(metric, profile, kind) {
-  const node = PROFILE_THRESHOLDS[metric] || {};
-  const scope = node[profile] || node.default || {};
+  const scope = PROFILES[profile]?.thresholds?.[metric] || PROFILES.default?.thresholds?.[metric] || {};
   return scope[kind];
 }
 
 function inferProfile(snapshot = {}) {
-  let score = { saas: 0, retail: 0, industrial: 0, utility: 0, financial: 0, default: 0 };
+  let score = { saas: 0, software_tools: 0, healthcare_services: 0, retail: 0, industrial: 0, industrial_cyclical: 0, semiconductors: 0, utility: 0, financial: 0, banks: 0, insurance: 0, energy: 0, reit: 0, consumer_staples: 0, default: 0 };
   if (snapshot.grossMargin !== null) {
-    if (snapshot.grossMargin >= 60) score.saas += 2;
-    if (snapshot.grossMargin <= 30) { score.retail += 1; score.industrial += 1; }
+    if (snapshot.grossMargin >= 68) { score.saas += 2; score.software_tools += 2; }
+    if (snapshot.grossMargin >= 52 && snapshot.capexSales > 5) score.semiconductors += 2;
+    if (snapshot.grossMargin <= 30) { score.retail += 1; score.industrial += 1; score.energy += 1; }
   }
-  if (snapshot.inventoryToAssets !== null && snapshot.inventoryToAssets > 8) score.retail += 2;
+  if (snapshot.inventoryToAssets !== null && snapshot.inventoryToAssets > 8) { score.retail += 2; score.consumer_staples += 1; }
   if (snapshot.capexSales !== null) {
-    if (snapshot.capexSales > 8) { score.industrial += 2; score.utility += 1; }
-    if (snapshot.capexSales < 4) score.saas += 1;
+    if (snapshot.capexSales > 8) { score.industrial += 2; score.utility += 1; score.energy += 2; score.industrial_cyclical += 1; }
+    if (snapshot.capexSales < 4) { score.saas += 1; score.software_tools += 1; score.healthcare_services += 1; }
   }
-  if (snapshot.netDebtEbitda !== null && snapshot.netDebtEbitda > 3) score.utility += 1;
+  if (snapshot.netDebtEbitda !== null && snapshot.netDebtEbitda > 3) { score.utility += 1; score.reit += 1; }
+  if (snapshot.hasBankSignals) score.banks += 4;
+  if (snapshot.hasInsuranceSignals) score.insurance += 4;
+  if (snapshot.hasREITSignals) score.reit += 4;
   const sorted = Object.entries(score).sort((a,b)=>b[1]-a[1]);
   const [winner, pts] = sorted[0] || ['default', 0];
   const secondPts = sorted[1]?.[1] || 0;
@@ -555,9 +653,31 @@ function parseCustomProfile() {
     const cfg = JSON.parse(txt);
     return cfg && typeof cfg === 'object' ? cfg : null;
   } catch {
+    showError('Custom profile JSON is invalid. Please provide valid JSON.');
     return null;
   }
 }
+
+function showError(msg) {
+  const errEl = document.getElementById('error-msg');
+  if (!errEl) return;
+  errEl.textContent = msg || 'Unknown error.';
+  errEl.style.display = 'block';
+}
+
+function hideError() {
+  const errEl = document.getElementById('error-msg');
+  if (!errEl) return;
+  errEl.textContent = '';
+  errEl.style.display = 'none';
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function escapeAttr(str) { return escapeHtml(str).replace(/`/g, '&#96;'); }
+function fmt(x, d = 1) { return typeof x === 'number' && isFinite(x) ? x.toFixed(d) : 'N/A'; }
 
 // Helper to create a standard analysis item
 const METRIC_TIPS = {
@@ -613,7 +733,7 @@ function analyze(data, profile = 'default', options = {}) {
       const l = r.label.toLowerCase();
       const matches = keywords.every(k => l.includes(k.toLowerCase()));
       if (!matches) return false;
-      return r.values.some(v => parseNumber(v) !== null);
+      return getNumericSeries(r).some(v => v !== null);
     });
   }
 
@@ -642,7 +762,17 @@ function analyze(data, profile = 'default', options = {}) {
     const capexSales = (getLatest(capexCore) !== null && getLatest(revenueRow) ? Math.abs(getLatest(capexCore)) / getLatest(revenueRow) * 100 : null);
     const invPctAssets = (getLatest(invCore) !== null && getLatest(assetsCore) ? Math.abs(getLatest(invCore)) / getLatest(assetsCore) * 100 : null);
     const ndE = null;
-    const inferred = inferProfile({ grossMargin: gm, capexSales, inventoryToAssets: invPctAssets, netDebtEbitda: ndE });
+    const allLabels = Object.values(data.sections || {}).flatMap(sec => (sec.rows || []).map(r => (r.label || '').toLowerCase()));
+    const text = allLabels.join(' | ');
+    const inferred = inferProfile({
+      grossMargin: gm,
+      capexSales,
+      inventoryToAssets: invPctAssets,
+      netDebtEbitda: ndE,
+      hasBankSignals: /(interest income|net interest margin|loans|deposits|cet1)/i.test(text),
+      hasInsuranceSignals: /(premiums|claims|combined ratio)/i.test(text),
+      hasREITSignals: /(ffo|affo)/i.test(text)
+    });
     activeProfile = inferred.profile;
     results.profileInference = inferred;
   }
@@ -2368,10 +2498,16 @@ function analyze(data, profile = 'default', options = {}) {
   // OVERALL SCORE
   // ══════════════════════════════════════════════════════════
   const gradeValues = { excellent: 4, good: 3, average: 2, poor: 1 };
-  const scoreKeys = Object.keys(results.scores);
+  const includeAnalystNoise = !!options.includeAnalystNoise;
   const validScores = results.sections
     .filter(sec => gradeValues[sec.grade])
-    .map(sec => ({ grade: gradeValues[sec.grade], weight: avg(sec.items.map(i => i.confidence || 0.5)) || 0.5 }));
+    .filter(sec => !/analyst/i.test(sec.title || '') || includeAnalystNoise)
+    .filter(sec => sec.grade !== 'info')
+    .map(sec => {
+      const rawConf = avg((sec.items || []).map(i => Math.min(1, Math.max(0.25, i.confidence || 0.25)))) || 0.25;
+      const noiseWeight = /analyst/i.test(sec.title || '') ? 0.35 : 1;
+      return { grade: gradeValues[sec.grade], weight: rawConf * noiseWeight };
+    });
   if (validScores.length) {
     const weightedSum = validScores.reduce((s, item) => s + item.grade * item.weight, 0);
     const weightTotal = validScores.reduce((s, item) => s + item.weight, 0);
@@ -2412,13 +2548,14 @@ function renderTrendBars(values) {
 function renderDashboard(data, results) {
   const d = document.getElementById('dashboard');
   const overallLabel = gradeLabel(results.overall || 'average');
-  const overallColor = { excellent: 'var(--green)', good: 'var(--accent)', average: 'var(--yellow)', poor: 'var(--red)' }[results.overall] || 'var(--text-dim)';
+  const headerName = `${data.ticker ? data.ticker + ' — ' : ''}${data.company}`;
+  const profileLine = results.profileInference ? ` • Inferred: ${PROFILES[results.profileInference.profile]?.label || results.profileInference.profile} (${fmt((results.profileInference.confidence || 0) * 100, 0)}%)` : '';
 
   let html = `
     <div class="dash-header fade-up">
       <div>
-        <h2>${data.ticker ? data.ticker + ' — ' : ''}${data.company}</h2>
-        <span class="price">${data.price || ''} ${data.period ? '• ' + data.period : ''} • ${results.totalMetrics} metrics analyzed</span>
+        <h2>${escapeHtml(headerName)}</h2>
+        <span class="price">${escapeHtml(data.priceRaw || data.price || '')} ${data.period ? '• ' + escapeHtml(data.period) : ''} • ${results.totalMetrics} metrics analyzed${escapeHtml(profileLine)}</span>
       </div>
       <div class="header-actions">
         <button id="toggleSectionsBtn" class="btn-toggle-sections" onclick="toggleAllSections()">Collapse all sections</button>
@@ -2444,13 +2581,13 @@ function renderDashboard(data, results) {
     const grade = bears >= 2 ? 'poor' : bulls > bears ? 'good' : 'average';
     const driver = signals[0]?.name || 'Not enough data';
     const light = grade === 'poor' ? '🔴' : grade === 'good' ? '🟢' : '🟡';
-    html += `<div class="score-card ${grade} fade-up"><div class="label">2-minute ${cat.k}</div><div class="value">${light} ${gradeLabel(grade)}</div><div class="detail">${driver} · <a href="${cat.href}" style="color:var(--accent)">see details</a></div></div>`;
+    html += `<div class="score-card ${grade} fade-up"><div class="label">2-minute ${cat.k}</div><div class="value">${light} ${gradeLabel(grade)}</div><div class="detail">${escapeHtml(driver)} · <a href="${cat.href}" style="color:var(--accent)">see details</a></div></div>`;
   });
   html += `</div>`;
 
   // Score cards
   const cards = [
-    { label: 'Overall Health', value: overallLabel, grade: results.overall, detail: `Score: ${results.overallScore?.toFixed(1)}/4.0` },
+    { label: 'Overall Health', value: overallLabel, grade: results.overall, detail: `Score: ${fmt(results.overallScore, 1)}/4.0` },
     ...Object.entries(results.scores).map(([k, g]) => ({
       label: k.charAt(0).toUpperCase() + k.slice(1),
       value: gradeEmoji(g) + ' ' + gradeLabel(g),
@@ -2462,9 +2599,9 @@ function renderDashboard(data, results) {
   html += `<div class="score-row">`;
   cards.forEach((c, i) => {
     html += `<div class="score-card ${c.grade} fade-up delay-${Math.min(i+1, 6)}">
-      <div class="label">${c.label}</div>
-      <div class="value">${c.value}</div>
-      ${c.detail ? `<div class="detail">${c.detail}</div>` : ''}
+      <div class="label">${escapeHtml(c.label)}</div>
+      <div class="value">${escapeHtml(c.value)}</div>
+      ${c.detail ? `<div class="detail">${escapeHtml(c.detail)}</div>` : ''}
     </div>`;
   });
   html += `</div>`;
@@ -2476,7 +2613,7 @@ function renderDashboard(data, results) {
     <div id="${sec.id || `sec-${si}`}" class="section fade-up delay-${Math.min(si+2, 6)}">
       <div class="section-head${si < 4 ? ' open' : ''}" onclick="toggleSection(this)">
         <span style="font-size:1.2rem">${sec.icon}</span>
-        <h3>${sec.title}</h3>
+        <h3>${escapeHtml(sec.title)}</h3>
         <span class="metric-count">${sec.items.length} metrics</span>
         <span class="badge ${badgeCls}">${gradeLabel(sec.grade)}</span>
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -2490,15 +2627,15 @@ function renderDashboard(data, results) {
       html += `
         <div class="a-item">
           <div>
-            <div class="metric-name">${item.name}${item.tip ? ` <span class="tip" data-tip="${item.tip}">ⓘ</span>` : ""}</div>
-            <div class="metric-detail">${item.detail || ''}</div>
-            ${item.explanation ? `<div class="metric-values">${item.explanation}</div>` : ''}
-            <div class="metric-values">Confidence: ${(item.confidence * 100).toFixed(0)}%</div>
+            <div class="metric-name">${escapeHtml(item.name)}${item.tip ? ` <span class="tip" data-tip="${escapeAttr(item.tip)}">ⓘ</span>` : ""}</div>
+            <div class="metric-detail">${escapeHtml(item.detail || '')}</div>
+            ${item.explanation ? `<div class="metric-values">${escapeHtml(item.explanation)}</div>` : ''}
+            <div class="metric-values">Confidence: ${fmt((item.confidence || 0) * 100, 0)}%</div>
             ${renderTrendBars(item.values)}
           </div>
           <div class="signal ${sigCls}">
             <span class="dot ${dotCls}"></span>
-            ${item.signalText}
+            ${escapeHtml(item.signalText)}
           </div>
         </div>
       `;
@@ -2509,6 +2646,7 @@ function renderDashboard(data, results) {
   // Summary
   html += buildSummary(data, results);
   d.innerHTML = html;
+  ensureHashSectionOpen();
   updateToggleSectionsButton();
 }
 
@@ -2521,7 +2659,7 @@ function updateToggleSectionsButton() {
     return;
   }
   const allOpen = heads.every(h => h.classList.contains('open'));
-  btn.textContent = allOpen ? 'Collapse all sections' : 'Open all sections';
+  btn.textContent = allOpen ? 'Collapse all sections' : 'Expand all sections';
 }
 
 function toggleSection(headEl) {
@@ -2534,7 +2672,16 @@ function toggleAllSections() {
   if (!heads.length) return;
   const allOpen = heads.every(h => h.classList.contains('open'));
   heads.forEach(h => h.classList.toggle('open', !allOpen));
-  updateToggleSectionsButton();
+  const btn = document.getElementById('toggleSectionsBtn');
+  if (btn) btn.textContent = allOpen ? 'Expand all sections' : 'Collapse all sections';
+}
+
+function ensureHashSectionOpen() {
+  const id = (window.location.hash || '').replace('#', '');
+  if (!id) return;
+  const target = document.getElementById(id);
+  const head = target?.querySelector('.section-head');
+  if (head && !head.classList.contains('open')) head.classList.add('open');
 }
 
 function buildSummary(data, results) {
@@ -2556,14 +2703,20 @@ function buildSummary(data, results) {
   const harmonySec = results.sections.find(s => s.id === 'harmony');
   const harmonyVerdict = harmonySec ? (harmonySec.grade === 'poor' ? '⚠️ Harmony has meaningful mismatches.' : harmonySec.grade === 'good' ? '✅ Statements are mostly aligned.' : '➖ Mixed harmony signals.') : 'Not enough data.';
 
+  const valuationSec = results.sections.find(s => /valuation/i.test(s.title));
+  const deterioration = results.sections.some(s => /growth|cash flow|margins/i.test(s.title) && (s.items || []).some(i => i.signal === 'bear' && (i.confidence || 0) >= 0.6));
+  const cheapSignal = (valuationSec?.items || []).some(i => /cheap|undervalued|yield/i.test((i.signalText || '') + ' ' + (i.name || '')) && i.signal !== 'bear');
+  const valueTrap = cheapSignal && deterioration ? ' Value-trap watch: valuation looks cheap but core quality trends are mixed/weak.' : '';
+
   return `
   <div class="summary-box fade-up delay-6">
-    <h4>📋 Analysis Summary — ${data.ticker || data.company}</h4>
+    <h4>📋 Analysis Summary — ${escapeHtml(data.ticker || data.company)}</h4>
     <p style="margin-bottom:.5rem"><strong>Harmony verdict:</strong> ${harmonyVerdict}</p>
-    <p><strong style="color:var(--green)">Top strengths (3):</strong> ${strengths.length ? strengths.slice(0, 3).join(' · ') : 'None identified from available data.'}</p>
-    <p style="margin-top:.45rem"><strong style="color:var(--red)">Top risks (3):</strong> ${risks.length ? risks.slice(0, 3).join(' · ') : 'No major red flags detected.'}</p>
+    <p><strong style="color:var(--green)">Top strengths (3):</strong> ${escapeHtml(strengths.length ? strengths.slice(0, 3).join(' · ') : 'None identified from available data.')}</p>
+    <p style="margin-top:.45rem"><strong style="color:var(--red)">Top risks (3):</strong> ${escapeHtml(risks.length ? risks.slice(0, 3).join(' · ') : 'No major red flags detected.')}</p>
     <p style="margin-top:.45rem"><strong>High confidence signals:</strong> ${highConfidence.slice(0, 6).join(' · ') || 'Limited'}</p>
     <p style="margin-top:.35rem"><strong>Low confidence / missing data:</strong> ${lowConfidence.slice(0, 6).join(' · ') || 'Minimal'}</p>
+    <p style="margin-top:.35rem"><strong>Valuation vs quality:</strong> ${escapeHtml(valueTrap || 'No immediate cheap-vs-deterioration conflict detected.')}</p>
     <p style="margin-top:.75rem;font-size:.78rem;color:var(--text-dim)">
       ⚠️ Screening tool only. Use primary filings and your own due diligence.
     </p>
@@ -2604,6 +2757,7 @@ function syncCustomProfileUI() {
 document.addEventListener('DOMContentLoaded', () => {
   syncCustomProfileUI();
   document.getElementById('profileSelect')?.addEventListener('change', syncCustomProfileUI);
+  window.addEventListener('hashchange', ensureHashSectionOpen);
 
   // QoL: Ctrl/Cmd + Enter triggers analyze
   document.getElementById('dataInput')?.addEventListener('keydown', (e) => {
@@ -2613,13 +2767,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function analyzeData() {
   const raw = document.getElementById('dataInput').value.trim();
-  const errEl = document.getElementById('error-msg');
-  errEl.style.display = 'none';
-  errEl.textContent = '';
+  hideError();
 
   if (!raw || raw.length < 100) {
-    errEl.textContent = 'Please paste the full TIKR financial data (it seems too short).';
-    errEl.style.display = 'block';
+    showError('Please paste the full TIKR financial data (it seems too short).');
     return;
   }
 
@@ -2631,9 +2782,7 @@ function analyzeData() {
     const rowCount = Object.values(data.sections || {}).reduce((s, sec) => s + (sec?.rows?.length || 0), 0);
 
     if (secCount === 0 || rowCount === 0) {
-      errEl.textContent =
-        'No TIKR tables detected. Make sure you pasted the markdown tables (lines starting with "|") including the header row with dates.';
-      errEl.style.display = 'block';
+      showError('No TIKR tables detected. Make sure you pasted the markdown tables (lines starting with "|") including the header row with dates.');
       return;
     }
 
@@ -2645,23 +2794,80 @@ function analyzeData() {
     if (selected === 'custom') {
       customThresholds = parseCustomProfile();
       if (!customThresholds) {
-        errEl.textContent = 'Custom profile JSON is invalid. Fix the JSON and try again.';
-        errEl.style.display = 'block';
+        showError('Custom profile JSON is invalid. Fix the JSON and try again.');
         return;
       }
       // Use default profile logic + override thresholds
       engineProfile = 'default';
     }
 
-    const results = analyze(data, engineProfile, { customThresholds });
+    const results = analyze(data, engineProfile, {
+      customThresholds,
+      includeAnalystNoise: !!document.getElementById('includeAnalystNoise')?.checked
+    });
     renderDashboard(data, results);
     showDashboard();
   } catch (e) {
     console.error(e);
-    errEl.textContent = 'Parsing/analyzing failed. Open DevTools console for details.';
-    errEl.style.display = 'block';
+    showError('Parsing/analyzing failed. Open DevTools console for details.');
   }
 }
+
+const SELFTEST_SAMPLE_EN = `MEDP – Medpace Holdings, Inc.
+Price: A$3.69 | Extracted: 2026-01-01
+Period: annual
+Income Statement
+| Income Statement | TIKR.com | 2022 | 2023 |
+| Total Revenue | 1200 | 1500 |
+| Net Income | 120 | 165 |`;
+
+const SELFTEST_SAMPLE_ES = `IBE – Empresa Demo
+Price: SEK 259.20 | Extracted: 2026-01-01
+Period: annual
+Balance Sheet
+| Balance General | TIKR.com | 2022 | 2023
+| Activos totales | 10.000,00 | 12.000,00
+| Inventarios | 1.200,00 | 1.300,00`;
+
+const SELFTEST_SAMPLE_EU = `SAP – Sample AG
+Price: €123.45 | Extracted: 2026-01-01
+Period: annual
+Cash Flow
+| Cash Flow | TIKR.com | 2022 | 2023 |
+| Operating Cash Flow | 215.639,00 | 220.000,00 |
+| Capital Expenditures | (1.2B) | (1.1B) |`;
+
+function runSelfTests() {
+  const assert = (name, cond) => {
+    if (!cond) throw new Error(`Self test failed: ${name}`);
+    console.log(`✅ ${name}`);
+  };
+
+  assert('parseNumber EU', parseNumber('215.639,00') === 215639);
+  assert('parseNumber US', parseNumber('1,234.56') === 1234.56);
+  assert('parseNumber paren suffix', parseNumber('(1.2B)') === -1200000000);
+  assert('parseNumber multiple', parseNumber('15.2x') === 15.2);
+  assert('parseNumber NA', parseNumber('—') === null && parseNumber('N/A') === null);
+
+  const splitA = splitMarkdownRow('| A | B | C');
+  assert('splitMarkdownRow no trailing pipe keeps last cell', splitA.length === 3 && splitA[2] === 'C');
+
+  const p = parseTIKR(SELFTEST_SAMPLE_EN);
+  assert('parseTIKR ticker', p.ticker === 'MEDP');
+  assert('parseTIKR company', /Medpace/.test(p.company));
+  assert('parseTIKR price A$', p.priceRaw === 'A$3.69');
+  assert('parseTIKR section extraction', Object.keys(p.sections).length >= 1);
+
+  const pEs = parseTIKR(SELFTEST_SAMPLE_ES);
+  assert('parseTIKR spanish', pEs.sections['Balance Sheet']?.rows?.length >= 1 || Object.values(pEs.sections).some(s => (s.rows || []).length));
+
+  const pEu = parseTIKR(SELFTEST_SAMPLE_EU);
+  assert('parseTIKR euro price', pEu.priceNum === 123.45);
+
+  console.log('All self-tests passed.');
+  return true;
+}
+window.runSelfTests = runSelfTests;
 
 </script>
 </body>
