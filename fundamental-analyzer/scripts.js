@@ -25,6 +25,71 @@ function setLanguage(lang) {
   updateToggleSectionsButton();
 }
 
+
+const DYNAMIC_I18N = {
+  sectionTitles: {
+    'Growth':'Crecimiento',
+    'Profitability & Margins':'Rentabilidad y Márgenes',
+    'Cost Structure & OpEx':'Estructura de Costes y OpEx',
+    'Returns & Economic Moat':'Retornos y Foso Económico',
+    'Balance Sheet Composition':'Composición del Balance',
+    'Debt & Financial Health':'Deuda y Salud Financiera',
+    'Cash Flow Quality':'Calidad del Flujo de Caja',
+    'Efficiency & Operations':'Eficiencia y Operaciones',
+    'Valuation':'Valoración',
+    'Dividends & Shareholder Returns':'Dividendos y Retorno al Accionista',
+    'Consensus Estimates':'Estimaciones de Consenso',
+    'Analyst Sentiment (Low weight / noisy — ruido)':'Sentimiento de Analistas (bajo peso / ruidoso)',
+    'Harmony & Red Flags':'Armonía y Banderas Rojas',
+    'Balance Sheet Reality Check':'Chequeo de Realidad del Balance',
+    'Cash Flow — The Truth Serum':'Flujo de Caja — Suero de la Verdad'
+  },
+  metricNames: {
+    'Current Ratio':'Ratio Corriente',
+    'Quick Ratio':'Ratio Rápido',
+    'Revenue Growth (CAGR)':'Crecimiento de Ingresos (CAGR)',
+    'ROIC (Return on Invested Capital)':'ROIC (Retorno sobre Capital Invertido)',
+    'ROE (Return on Equity)':'ROE (Retorno sobre Patrimonio)',
+    'ROA (Return on Assets)':'ROA (Retorno sobre Activos)',
+    'Net Debt / Net Cash':'Deuda Neta / Caja Neta',
+    'Cash / Short-Term Debt':'Caja / Deuda a Corto Plazo'
+  },
+  fragments: {
+    'Latest':'Último',
+    'Avg':'Promedio',
+    'Trend':'Tendencia',
+    'Insufficient data':'Datos insuficientes',
+    'Strong':'Fuerte',
+    'Moderate':'Moderado',
+    'Slow':'Lento',
+    'Declining':'En descenso',
+    'Very Liquid':'Muy líquido',
+    'Healthy':'Saludable',
+    'OK':'Correcto',
+    'Low Liquidity ⚠️':'Liquidez baja ⚠️',
+    'Excludes inventory — more conservative than current ratio':'Excluye inventario: más conservador que el ratio corriente',
+    'Very Healthy':'Muy saludable',
+    'Adequate':'Adecuado',
+    'Tight Liquidity ⚠️':'Liquidez ajustada ⚠️',
+    'Not enough data':'Datos insuficientes',
+    'see details':'ver detalle',
+    'Quality':'Calidad',
+    'Moat':'Foso',
+    'Financial Risk':'Riesgo Financiero',
+    'Overall Health':'Salud General',
+    'Valuation':'Valoración'
+  }
+};
+
+function localizeDynamicText(text) {
+  if (currentLang !== 'es' || !text) return text;
+  let out = String(text);
+  Object.entries(DYNAMIC_I18N.metricNames).forEach(([en, es]) => { out = out.replaceAll(en, es); });
+  Object.entries(DYNAMIC_I18N.sectionTitles).forEach(([en, es]) => { out = out.replaceAll(en, es); });
+  Object.entries(DYNAMIC_I18N.fragments).forEach(([en, es]) => { out = out.replaceAll(en, es); });
+  return out;
+}
+
 // =========================================================
 // PARSER — Converts TIKR markdown tables to structured data
 // =========================================================
@@ -314,6 +379,19 @@ const METRIC_TIPS = {
   deferredRevenue: 'Deferred revenue (ingresos diferidos): cash collected before service delivery.'
 };
 
+
+function deriveScoreRule(name, detail, signalText, explanation) {
+  const n = String(name || '').toLowerCase();
+  if (n.includes('current ratio')) return "signal = latest > 1.5 ? 'bull' : latest > 1.0 ? 'neutral' : 'bear'; label = latest > 2.0 ? 'Very Healthy' : latest > 1.5 ? 'Healthy' : latest > 1.0 ? 'Adequate' : 'Tight Liquidity ⚠️'";
+  if (n.includes('quick ratio')) return "signal = latest > 1.2 ? 'bull' : latest > 0.8 ? 'neutral' : 'bear'; label = latest > 1.5 ? 'Very Liquid' : latest > 1.2 ? 'Healthy' : latest > 0.8 ? 'OK' : 'Low Liquidity ⚠️'; excludes inventory";
+  if (n.includes('debt / equity')) return "signal = latest < 30 ? 'bull' : latest < 80 ? 'neutral' : 'bear'";
+  if (n.includes('net debt / ebitda')) return "signal = latest < 0 ? 'bull' : latest < 2 ? 'neutral' : 'bear'";
+  if (n.includes('revenue growth (cagr)')) return "signal = cagr > 15 ? 'bull' : cagr > 8 ? 'neutral' : 'bear'";
+  if (n.includes('roic')) return "signal = latest > bull_threshold ? 'bull' : latest > neutral_threshold ? 'neutral' : 'bear'";
+  if (n.includes('total equity')) return "signal = latest > 0 && trend==='up' ? 'bull' : latest > 0 ? 'neutral' : 'bear'";
+  return explanation || detail || signalText || '';
+}
+
 function makeItem(name, detail, vals, signal, signalText, explanation, meta = {}) {
   return {
     name,
@@ -326,7 +404,7 @@ function makeItem(name, detail, vals, signal, signalText, explanation, meta = {}
     highConfidence: meta.highConfidence !== false,
     confidence: getConfidence(vals || []),
     labels: meta.labels || vals?.labels || [],
-    scoreRule: meta.scoreRule || ''
+    scoreRule: meta.scoreRule || deriveScoreRule(name, detail, signalText, explanation)
   };
 }
 
@@ -1167,7 +1245,9 @@ function analyze(data, profile = 'default', options = {}) {
       `Latest: ${latest?.toFixed(2)}x`,
       vals,
       latest > 1.5 ? 'bull' : latest > 1.0 ? 'neutral' : 'bear',
-      latest > 2.0 ? 'Very Healthy' : latest > 1.5 ? 'Healthy' : latest > 1.0 ? 'Adequate' : 'Tight Liquidity ⚠️'
+      latest > 2.0 ? 'Very Healthy' : latest > 1.5 ? 'Healthy' : latest > 1.0 ? 'Adequate' : 'Tight Liquidity ⚠️',
+      '',
+      { scoreRule: "latest > 1.5 ? 'bull' : latest > 1.0 ? 'neutral' : 'bear'; latest > 2.0 ? 'Very Healthy' : latest > 1.5 ? 'Healthy' : latest > 1.0 ? 'Adequate' : 'Tight Liquidity ⚠️'." }
     ));
   }
 
@@ -1182,7 +1262,8 @@ function analyze(data, profile = 'default', options = {}) {
       vals,
       latest > 1.2 ? 'bull' : latest > 0.8 ? 'neutral' : 'bear',
       latest > 1.5 ? 'Very Liquid' : latest > 1.2 ? 'Healthy' : latest > 0.8 ? 'OK' : 'Low Liquidity ⚠️',
-      'Excludes inventory — more conservative than current ratio'
+      'Excludes inventory — more conservative than current ratio',
+      { scoreRule: "latest > 1.2 ? 'bull' : latest > 0.8 ? 'neutral' : 'bear'; latest > 1.5 ? 'Very Liquid' : latest > 1.2 ? 'Healthy' : latest > 0.8 ? 'OK' : 'Low Liquidity ⚠️'; Excludes inventory." }
     ));
   }
 
@@ -2235,17 +2316,17 @@ function renderDashboard(data, results) {
     const bears = signals.filter(i => i.signal === 'bear').length;
     const bulls = signals.filter(i => i.signal === 'bull').length;
     const grade = bears >= 2 ? 'poor' : bulls > bears ? 'good' : 'average';
-    const driver = signals[0]?.name || 'Not enough data';
+    const driver = localizeDynamicText(signals[0]?.name || 'Not enough data');
     const light = grade === 'poor' ? '🔴' : grade === 'good' ? '🟢' : '🟡';
-    html += `<div class="score-card ${grade} fade-up"><div class="label">2-minute ${cat.k}</div><div class="value">${light} ${gradeLabel(grade)}</div><div class="detail">${driver} · <a href="${cat.href}" style="color:var(--accent)">see details</a></div></div>`;
+    html += `<div class="score-card ${grade} fade-up"><div class="label">2-minute ${localizeDynamicText(cat.k)}</div><div class="value">${light} ${gradeLabel(grade)}</div><div class="detail">${driver} · <a href="${cat.href}" style="color:var(--accent)">${localizeDynamicText('see details')}</a></div></div>`;
   });
   html += `</div>`;
 
   // Score cards
   const cards = [
-    { label: 'Overall Health', value: overallLabel, grade: results.overall, detail: `Score: ${results.overallScore?.toFixed(1)}/4.0` },
+    { label: localizeDynamicText('Overall Health'), value: overallLabel, grade: results.overall, detail: `${currentLang==='es'?'Puntuación':'Score'}: ${results.overallScore?.toFixed(1)}/4.0` },
     ...Object.entries(results.scores).map(([k, g]) => ({
-      label: k.charAt(0).toUpperCase() + k.slice(1),
+      label: localizeDynamicText(k.charAt(0).toUpperCase() + k.slice(1)),
       value: gradeEmoji(g) + ' ' + gradeLabel(g),
       grade: g,
       detail: ''
@@ -2269,7 +2350,7 @@ function renderDashboard(data, results) {
     <div id="${sec.id || `sec-${si}`}" class="section fade-up delay-${Math.min(si+2, 6)}">
       <div class="section-head${si < 4 ? ' open' : ''}" onclick="toggleSection(this)">
         <span style="font-size:1.2rem">${sec.icon}</span>
-        <h3>${sec.title}</h3>
+        <h3>${localizeDynamicText(sec.title)}</h3>
         <span class="metric-count">${sec.items.length} ${t('metricsAnalyzed','metrics analyzed')}</span>
         <span class="badge ${badgeCls}">${gradeLabel(sec.grade)}</span>
         <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -2283,15 +2364,15 @@ function renderDashboard(data, results) {
       html += `
         <div class="a-item">
           <div>
-            <div class="metric-name">${item.name}${item.tip ? ` <span class="tip" data-tip="${item.tip}">ⓘ</span>` : ""} <span class="tip" data-tip="${t('scoreConditions','Score conditions')}: ${item.scoreRule || item.explanation || item.signalText || ''}">🏷️</span></div>
-            <div class="metric-detail">${item.detail || ''}</div>
-            ${item.explanation ? `<div class="metric-values">${item.explanation}</div>` : ''}
+            <div class="metric-name">${localizeDynamicText(item.name)}${item.tip ? ` <span class="tip" data-tip="${localizeDynamicText(item.tip)}">ⓘ</span>` : ""} <span class="tip" data-tip="${t('scoreConditions','Score conditions')}: ${localizeDynamicText(item.scoreRule || item.explanation || item.signalText || '')}">🏷️</span></div>
+            <div class="metric-detail">${localizeDynamicText(item.detail || '')}</div>
+            ${item.explanation ? `<div class="metric-values">${localizeDynamicText(item.explanation)}</div>` : ''}
             <div class="metric-values">${t('confidence','Confidence')}: ${(item.confidence * 100).toFixed(0)}%</div>
             ${renderTrendBars(item.values, item.labels || [])}
           </div>
           <div class="signal ${sigCls}">
             <span class="dot ${dotCls}"></span>
-            ${item.signalText}
+            ${localizeDynamicText(item.signalText)}
           </div>
         </div>
       `;
@@ -2354,18 +2435,18 @@ function buildSummary(data, results) {
   });
 
   const harmonySec = results.sections.find(s => s.id === 'harmony');
-  const harmonyVerdict = harmonySec ? (harmonySec.grade === 'poor' ? '⚠️ Harmony has meaningful mismatches.' : harmonySec.grade === 'good' ? '✅ Statements are mostly aligned.' : '➖ Mixed harmony signals.') : 'Not enough data.';
+  const harmonyVerdict = harmonySec ? (harmonySec.grade === 'poor' ? (currentLang==='es'?'⚠️ La armonía muestra desajustes relevantes.':'⚠️ Harmony has meaningful mismatches.') : harmonySec.grade === 'good' ? (currentLang==='es'?'✅ Los estados están mayormente alineados.':'✅ Statements are mostly aligned.') : (currentLang==='es'?'➖ Señales de armonía mixtas.':'➖ Mixed harmony signals.')) : (currentLang==='es'?'Datos insuficientes.':'Not enough data.');
 
   return `
   <div class="summary-box fade-up delay-6">
-    <h4>📋 Analysis Summary — ${data.ticker || data.company}</h4>
-    <p style="margin-bottom:.5rem"><strong>Harmony verdict:</strong> ${harmonyVerdict}</p>
-    <p><strong style="color:var(--green)">Top strengths (3):</strong> ${strengths.length ? strengths.slice(0, 3).join(' · ') : 'None identified from available data.'}</p>
-    <p style="margin-top:.45rem"><strong style="color:var(--red)">Top risks (3):</strong> ${risks.length ? risks.slice(0, 3).join(' · ') : 'No major red flags detected.'}</p>
-    <p style="margin-top:.45rem"><strong>High confidence signals:</strong> ${highConfidence.slice(0, 6).join(' · ') || 'Limited'}</p>
-    <p style="margin-top:.35rem"><strong>Low confidence / missing data:</strong> ${lowConfidence.slice(0, 6).join(' · ') || 'Minimal'}</p>
+    <h4>📋 ${currentLang==='es'?'Resumen del Análisis':'Analysis Summary'} — ${data.ticker || data.company}</h4>
+    <p style="margin-bottom:.5rem"><strong>${currentLang==='es'?'Veredicto de armonía':'Harmony verdict'}:</strong> ${harmonyVerdict}</p>
+    <p><strong style="color:var(--green)">${currentLang==='es'?'Fortalezas principales (3)':'Top strengths (3)'}:</strong> ${strengths.length ? strengths.slice(0, 3).map(localizeDynamicText).join(' · ') : (currentLang==='es'?'No se identificaron con los datos disponibles.':'None identified from available data.')}</p>
+    <p style="margin-top:.45rem"><strong style="color:var(--red)">${currentLang==='es'?'Riesgos principales (3)':'Top risks (3)'}:</strong> ${risks.length ? risks.slice(0, 3).map(localizeDynamicText).join(' · ') : (currentLang==='es'?'No se detectaron banderas rojas relevantes.':'No major red flags detected.')}</p>
+    <p style="margin-top:.45rem"><strong>${currentLang==='es'?'Señales de alta confianza':'High confidence signals'}:</strong> ${highConfidence.slice(0, 6).map(localizeDynamicText).join(' · ') || (currentLang==='es'?'Limitado':'Limited')}</p>
+    <p style="margin-top:.35rem"><strong>${currentLang==='es'?'Baja confianza / faltan datos':'Low confidence / missing data'}:</strong> ${lowConfidence.slice(0, 6).map(localizeDynamicText).join(' · ') || (currentLang==='es'?'Mínimo':'Minimal')}</p>
     <p style="margin-top:.75rem;font-size:.78rem;color:var(--text-dim)">
-      ⚠️ Screening tool only. Use primary filings and your own due diligence.
+      ${currentLang==='es'?'⚠️ Herramienta de cribado. Usa siempre los informes primarios y tu propia diligencia debida.':'⚠️ Screening tool only. Use primary filings and your own due diligence.'}
     </p>
   </div>`;
 }
