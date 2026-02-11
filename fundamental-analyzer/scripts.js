@@ -26,6 +26,195 @@ function setLanguage(lang) {
 }
 
 
+
+
+const FINANCIAL_LABEL_EN_ES = {
+  "Revenues": "Ingresos",
+  "Total Revenues": "Ingresos totales",
+  "% Change YoY": "% De cambio interanual",
+  "Cost of Goods Sold": "Coste de los bienes vendidos",
+  "Gross Profit": "Beneficio bruto",
+  "% Gross Margins": "% Márgenes brutos",
+  "Selling General & Admin Expenses": "Gastos de venta generales y administrativos",
+  "Depreciation & Amortization": "Depreciación y amortización",
+  "Amortization of Goodwill and Intangible Assets": "Amortización de fondos de comercio y activos intangibles",
+  "Other Operating Expenses": "Otros gastos operacionales",
+  "Total Operating Expenses": "Gastos operativos totales",
+  "Operating Income": "Beneficio operativo",
+  "% Operating Margins": "% Márgenes operativos",
+  "Interest Expense": "Gastos por intereses",
+  "Interest And Investment Income": "Ingresos por intereses e inversiones",
+  "Currency Exchange Gains (Loss)": "Ganancias (pérdidas) cambiarias",
+  "Other Non Operating Income (Expenses)": "Otros ingresos (gastos) no operativos",
+  "EBT Excl. Unusual Items": "EBT excl. Artículos inusuales",
+  "Merger & Restructuring Charges": "Cargos de fusión y reestructuración",
+  "Impairment of Goodwill": "Deterioro del fondo de comercio",
+  "Gain (Loss) On Sale Of Investments": "Ganancia (pérdida) por venta de inversiones",
+  "Legal Settlements": "Acuerdos legales",
+  "Other Unusual Items": "Otros artículos inusuales",
+  "EBT Incl. Unusual Items": "EBT incl. Artículos extraordinarios",
+  "Income Tax Expense": "Gastos de impuestos",
+  "Earnings From Continuing Operations": "Beneficios por operaciones continuadas",
+  "Net Income to Company": "Beneficio neto de la empresa",
+  "Net Income": "Beneficio neto",
+  "Preferred Dividend and Other Adjustments": "Dividendo preferente y otros ajustes",
+  "Net Income to Common Incl Extra Items": "Beneficio neto a acciones comunes incluidos extraordinarios",
+  "% Net Income to Common Incl Extra Items Margins": "Margen de beneficio neto a acciones comunes incluidos extraordinarios %",
+  "Net Income to Common Excl. Extra Items": "Beneficio neto a acciones comunes excluidos extraordinarios",
+  "% Net Income to Common Excl. Extra Items Margins": "Margen de beneficio neto a acciones comunes excluidos extraordinarios %",
+  "Supplementary Data:": "Datos adicionales:",
+  "Diluted EPS Excl Extra Items": "BPA diluido sin extraordinarios",
+  "Weighted Average Diluted Shares Outstanding": "Promedio ponderado de acciones diluidas en circulación",
+  "Weighted Average Basic Shares Outstanding": "Promedio ponderado de acciones básicas en circulación",
+  "Basic EPS": "BPA básico",
+  "EBITDA": "EBITDA",
+  "EBITDAR": "EBITDAR",
+  "Selling and Marketing Expense": "Gastos de venta y marketing",
+  "Effective Tax Rate %": "Tasa efectiva de impuestos %",
+  "Market Cap": "Capitalización de mercado",
+  "Price Close": "Precio de cierre",
+  "TEV": "TEV",
+  "Cash And Equivalents": "Efectivo y equivalentes",
+  "Total Cash And Short Term Investments": "Efectivo total e inversiones a corto plazo",
+  "Accounts Receivable": "Cuentas por cobrar",
+  "Other Receivables": "Otros por cobrar",
+  "Notes Receivable": "Notas por cobrar",
+  "Total Receivables": "Total de cuentas por cobrar",
+  "Prepaid Expenses": "Gastos pagados por anticipado",
+  "Restricted Cash": "Efectivo restringido",
+  "Other Current Assets": "Otro activo corriente",
+  "Total Current Assets": "Total de activo corriente",
+  "Gross Property Plant And Equipment": "Inmovilizado material bruto",
+  "Accumulated Depreciation": "Depreciación acumulada",
+  "Net Property Plant And Equipment": "Inmovilizado material neto",
+  "Goodwill": "Fondo de comercio",
+  "Other Intangibles": "Otros intangibles",
+  "Deferred Tax Assets Long-Term": "Activos por impuestos diferidos a largo plazo",
+  "Deferred Charges Long-Term": "Cargos diferidos a largo plazo",
+  "Other Long-Term Assets": "Otros activos a largo plazo",
+  "Total Assets": "Activo total",
+  "Accounts Payable": "Cuentas por pagar",
+  "Accrued Expenses": "Gastos devengados",
+  "Short-term Borrowings": "Préstamos de corto plazo",
+  "Current Portion of Long-Term Debt": "Porción corriente de la deuda a largo plazo",
+  "Current Portion of Capital Lease Obligations": "Porción corriente de las obligaciones de arrendamiento financiero",
+  "Unearned Revenue Current": "Ingresos no devengados (corriente)",
+  "Other Current Liabilities": "Otros pasivos corrientes",
+  "Total Current Liabilities": "Total pasivo corriente",
+  "Long-Term Debt": "Deuda a largo plazo",
+  "Capital Leases": "Arrendamientos de capitales",
+  "Deferred Tax Liability Non Current": "Pasivo por impuesto diferido no corriente",
+  "Other Non Current Liabilities": "Otro pasivo no corrientes",
+  "Total Liabilities": "Pasivo Total",
+  "Common Stock": "Acciones comunes",
+  "Additional Paid In Capital": "Prima de suscripción",
+  "Retained Earnings": "Beneficio no distribuido",
+  "Treasury Stock": "Autocartera",
+  "Comprehensive Income and Other": "Resultado integral y otros",
+  "Total Common Equity": "Patrimonio neto común total",
+  "Total Equity": "Fondos propios totales",
+  "Total Liabilities And Equity": "Pasivo total y patrimonio neto",
+  "Total Shares Out. on Filing Date": "Total de acciones fuera. en la fecha de presentación",
+  "Book Value / Share": "Valor contable / Acción",
+  "Tangible Book Value": "Valor contable tangible",
+  "Tangible Book Value / Share": "Valor contable tangible / acción",
+  "Total Debt": "Deuda total",
+  "Net Debt": "Deuda neta",
+  "Land": "Terrenos",
+  "Buildings": "Edificios",
+  "Construction In Progress": "Construcción en progreso",
+  "Full Time Employees": "Empleados a tiempo completo",
+  "Cash Flow Statement": "Estado de flujo de efectivo",
+  "Total Depreciation & Amortization": "Depreciación y amortización total",
+  "Amortization of Deferred Charges": "Amortización de cargos diferidos",
+  "(Gain) Loss on Sale of Investments": "(Ganancia) Pérdida por venta de inversiones",
+  "Asset Writedown & Restructuring Costs": "Deterioro de activos y costes de reestructuración",
+  "Stock-Based Compensation": "Compensación de stock options",
+  "Other Operating Activities": "Otras actividades operativas",
+  "Change In Accounts Receivable": "Cambio en cuentas por cobrar",
+  "Change In Accounts Payable": "Cambio en cuentas por pagar",
+  "Change in Unearned Revenues": "Cambio en los ingresos no devengados",
+  "Change in Other Net Operating Assets": "Variación en otros activos operativos netos",
+  "Cash from Operations": "Efectivo de Operaciones",
+  "Memo: Change in Net Working Capital": "Nota: Cambio en el capital circulante",
+  "Capital Expenditure": "Gastos de capital",
+  "Cash Acquisitions": "Adquisiciones con efectivo",
+  "Sale (Purchase) of Intangible assets": "Venta (compra) de activos intangibles",
+  "Other Investing Activities": "Otras actividades de inversión",
+  "Cash from Investing": "Efectivo de la inversión",
+  "Total Debt Issued": "Deuda total emitida",
+  "Total Debt Repaid": "Total de la deuda reembolsada",
+  "Issuance of Common Stock": "Emisión de acciones ordinarias",
+  "Repurchase of Common Stock": "Recompra de acciones comunes",
+  "Other Financing Activities": "Otras Actividades de Financiamiento",
+  "Cash from Financing": "Efectivo de Financiamiento",
+  "Foreign Exchange Rate Adjustments": "Ajustes del tipo de cambio de divisas",
+  "Net Change in Cash": "Cambio neto en efectivo",
+  "Free Cash Flow": "Flujo de caja libre",
+  "% Free Cash Flow Margins": "% Márgenes de flujo de caja libre",
+  "Cash and Cash Equivalents, Beginning of Period": "Efectivo y equivalentes de efectivo, comienzo del período",
+  "Cash and Cash Equivalents, End of Period": "Efectivo y equivalentes de efectivo, fin de período",
+  "Cash Interest Paid": "Intereses en efectivo pagados",
+  "Cash Taxes Paid": "Impuestos en efectivo pagados",
+  "Cash Flow per Share": "Flujo de caja por acción"
+};
+
+const FINANCIAL_SYNONYMS = {
+  'sga': 'Selling General & Admin Expenses',
+  'sg&a': 'Selling General & Admin Expenses',
+  'selling general & admin': 'Selling General & Admin Expenses',
+  'selling general and admin': 'Selling General & Admin Expenses',
+  'selling, general & administrative': 'Selling General & Admin Expenses',
+  'selling general & administrative': 'Selling General & Admin Expenses',
+  'cash and cash equivalents': 'Cash And Equivalents',
+  'capital expenditures': 'Capital Expenditure',
+  'capital expenditure': 'Capital Expenditure',
+  'unearned revenue current': 'Unearned Revenue Current'
+};
+
+const LABEL_NORMALIZATION_FIXES = {
+  'inmobilizado': 'inmovilizado',
+  'beneficio netos': 'beneficio neto',
+  'extradordinarios': 'extraordinarios'
+};
+
+function normalizeLabelText(label) {
+  if (!label) return '';
+  let out = String(label)
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*%\s*/g, ' % ')
+    .trim();
+  Object.entries(LABEL_NORMALIZATION_FIXES).forEach(([wrong, ok]) => {
+    const re = new RegExp(wrong, 'gi');
+    out = out.replace(re, ok);
+  });
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+const FINANCIAL_LABEL_NORMALIZED = Object.fromEntries(
+  Object.entries(FINANCIAL_LABEL_EN_ES).map(([en, es]) => [normalizeLabelText(en).toLowerCase(), { en, es }])
+);
+
+function canonicalizeFinancialLabel(label) {
+  const raw = String(label || '');
+  const normalized = normalizeLabelText(raw);
+  const exact = FINANCIAL_LABEL_NORMALIZED[normalized.toLowerCase()];
+  if (exact) return { raw, normalized, canonicalEn: exact.en, es: exact.es, match: 'exact' };
+
+  const syn = FINANCIAL_SYNONYMS[normalized.toLowerCase()];
+  if (syn && FINANCIAL_LABEL_EN_ES[syn]) {
+    return { raw, normalized, canonicalEn: syn, es: FINANCIAL_LABEL_EN_ES[syn], match: 'synonym' };
+  }
+
+  return { raw, normalized, canonicalEn: raw, es: raw, match: 'fallback' };
+}
+
+function translateFinancialLabel(label) {
+  const c = canonicalizeFinancialLabel(label);
+  return currentLang === 'es' ? (c.es || c.raw) : (c.canonicalEn || c.raw);
+}
+
 const DYNAMIC_I18N = {
   sectionTitles: {
     'Growth':'Crecimiento',
@@ -82,8 +271,17 @@ const DYNAMIC_I18N = {
 };
 
 function localizeDynamicText(text) {
-  if (currentLang !== 'es' || !text) return text;
-  let out = String(text);
+  if (!text) return text;
+  let out = normalizeLabelText(String(text));
+
+  // Financial labels first: exact map, then synonyms, fallback to original.
+  Object.entries(FINANCIAL_LABEL_EN_ES).sort((a, b) => b[0].length - a[0].length).forEach(([en, es]) => {
+    const re = new RegExp(en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    out = out.replace(re, currentLang === 'es' ? es : en);
+  });
+
+  if (currentLang !== 'es') return out;
+
   Object.entries(DYNAMIC_I18N.metricNames).forEach(([en, es]) => { out = out.replaceAll(en, es); });
   Object.entries(DYNAMIC_I18N.sectionTitles).forEach(([en, es]) => { out = out.replaceAll(en, es); });
   Object.entries(DYNAMIC_I18N.fragments).forEach(([en, es]) => { out = out.replaceAll(en, es); });
@@ -212,16 +410,17 @@ function parseTIKR(raw) {
       const cells = splitMarkdownRow(row);
       if (cells.length < 2) continue;
       if (cells[0] === '---' || cells.every(c => c === '---' || c === '')) continue;
-      const label = cells[0];
-      if ((label.includes('TIKR') || label.includes('Cuenta') || label.includes('Balance') ||
-           label.includes('Cash Flow') || label.includes('Ratios') || label.includes('Múltiplos') ||
-           label.includes('Objetivos') || label.includes('Estimaciones')) && cells.some(c => c.match(/\d{2}\/\d{2}\/\d{2}/))) {
+      const rawLabel = normalizeLabelText(cells[0]);
+      if ((rawLabel.includes('TIKR') || rawLabel.includes('Cuenta') || rawLabel.includes('Balance') ||
+           rawLabel.includes('Cash Flow') || rawLabel.includes('Ratios') || rawLabel.includes('Múltiplos') ||
+           rawLabel.includes('Objetivos') || rawLabel.includes('Estimaciones')) && cells.some(c => c.match(/\d{2}\/\d{2}\/\d{2}/))) {
         dates = cells.slice(1).map(c => c.replace('TIKR.com','').trim());
         continue;
       }
-      if (label === 'TIKR.com' || label === '---') continue;
+      if (rawLabel === 'TIKR.com' || rawLabel === '---') continue;
+      const cLabel = canonicalizeFinancialLabel(rawLabel);
       const values = cells.slice(1);
-      parsed.push({ label, values, dates });
+      parsed.push({ label: cLabel.canonicalEn, rawLabel, displayLabel: cLabel.es, labelNormalized: cLabel.normalized, values, dates });
     }
     data.sections[secName] = { dates, rows: parsed };
   }
@@ -431,7 +630,7 @@ function analyze(data, profile = 'default', options = {}) {
   function findRow(section, ...keywords) {
     if (!section) return null;
     return section.rows.find(r => {
-      const l = r.label.toLowerCase();
+      const l = [r.label, r.rawLabel, r.displayLabel, r.labelNormalized].filter(Boolean).join(' | ').toLowerCase();
       const matches = keywords.every(k => l.includes(k.toLowerCase()));
       if (!matches) return false;
       return r.values.some(v => parseNumber(v) !== null);
